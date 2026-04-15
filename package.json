@@ -1,0 +1,19 @@
+{
+  "name": "mission-ntpc-campaign",
+  "version": "2.0.0",
+  "description": "Gamified Twitter Campaign Engine for #MissionNTPCResult",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.1",
+    "mongoose": "^8.9.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
