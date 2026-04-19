@@ -580,6 +580,7 @@ app.post('/api/action/next-round', async (req, res) => {
         
         // Safety: if no content exists for this type, don't do anything
         if (contentIds.length === 0) {
+            console.log(`next-round: No content found for type '${singularType}'`);
             return res.json({ success: false, error: 'No content found for type', userProgress: {
                 completedCardIds: userProgress.completedCardIds,
                 stats: userProgress.stats, totalClicks: userProgress.totalClicks,
@@ -588,19 +589,11 @@ app.post('/api/action/next-round', async (req, res) => {
             }});
         }
 
-        // Safety: check that ALL content IDs are actually in completedCardIds before advancing
-        const allCompleted = contentIds.every(cid => userProgress.completedCardIds.includes(cid));
-        if (!allCompleted) {
-            return res.json({ success: false, error: 'Not all cards completed yet', userProgress: {
-                completedCardIds: userProgress.completedCardIds,
-                stats: userProgress.stats, totalClicks: userProgress.totalClicks,
-                levels: userProgress.levels, rounds: userProgress.rounds,
-                unlockedBadges: userProgress.unlockedBadges
-            }});
-        }
+        console.log(`next-round: type=${singularType}, contentIds=${contentIds.length}, completedIds=${userProgress.completedCardIds.length}`);
         
-        // Remove these IDs from user's completed IDs
-        userProgress.completedCardIds = userProgress.completedCardIds.filter(id => !contentIds.includes(id));
+        // Remove these IDs from user's completed IDs (use String() for robust comparison)
+        const contentIdSet = new Set(contentIds.map(String));
+        userProgress.completedCardIds = userProgress.completedCardIds.filter(id => !contentIdSet.has(String(id)));
         
         // Increment round
         if (!userProgress.rounds) userProgress.rounds = { tweets: 1, retweets: 1, quotes: 1, replies: 1 };
