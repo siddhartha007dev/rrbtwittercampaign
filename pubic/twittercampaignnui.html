@@ -2303,9 +2303,9 @@
                             <span>📸</span> Campaign Photo
                           </div>
                           
-                          {/* Centered Download Option */}
-                          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/img:opacity-100 transition-opacity duration-300 bg-black/40 z-20">
-                            <a href={CAMPAIGN_IMAGES[Math.floor(idx / 2) % CAMPAIGN_IMAGES.length]} download={`ntpc_campaign_${Math.floor(idx / 2) + 1}.jpg`} onClick={(e) => e.stopPropagation()} className="bg-[#1DA1F2] hover:bg-blue-400 text-white font-black text-[11px] uppercase tracking-widest px-4 py-2 rounded-full shadow-[0_0_15px_rgba(29,161,242,0.6)] transform translate-y-4 group-hover/img:translate-y-0 transition-all duration-300 flex items-center gap-2">
+                          {/* Centered Download Option (Always Visible) */}
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/20 z-20 pointer-events-none">
+                            <a href={CAMPAIGN_IMAGES[Math.floor(idx / 2) % CAMPAIGN_IMAGES.length]} download={`ntpc_campaign_${Math.floor(idx / 2) + 1}.jpg`} onClick={(e) => e.stopPropagation()} className="pointer-events-auto bg-[#1DA1F2] hover:bg-blue-400 text-white font-black text-[11px] uppercase tracking-widest px-4 py-2 rounded-full shadow-[0_0_15px_rgba(29,161,242,0.8)] border border-blue-400/50 flex items-center gap-2 backdrop-blur-sm">
                               ⬇ Download Photo
                             </a>
                           </div>
