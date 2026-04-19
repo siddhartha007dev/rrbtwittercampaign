@@ -1342,7 +1342,7 @@ const ensureLiveTweetCards = async ({ targetCount = 500, hashtag = '#declare_rrb
  const bodyNoHash = normalizeText(body.replace(/#[A-Za-z0-9_]+/g, '').trim());
 
  // shrink random picks if needed (pinned remain)
- for (let dyn = 3; dyn >= 0; dyn--) {
+ for (let dyn = 1; dyn >= 0; dyn--) {
  for (let st = 3; st >= 0; st--) {
  const tagBlock = buildTagBlock({
  staticPinned,
