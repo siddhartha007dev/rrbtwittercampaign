@@ -1192,6 +1192,7 @@
 
       const generateContent = () => {
         const TWITTER_LIMIT = 280;
+        const sep = '\n\n';
         const hashtag = (watchdogInfo.hashtag || '#Declare_RRBNTPC2024_Result').trim() || '#Declare_RRBNTPC2024_Result';
         const mandatoryHashtag = hashtag.startsWith('#') ? hashtag : `#${hashtag}`;
 
@@ -1208,117 +1209,112 @@
           return normalize(`${out} ${mandatoryHashtag}`);
         };
 
-        const pick = (arr) => (arr && arr.length > 0) ? normalize(arr[Math.floor(Math.random() * arr.length)]) : '';
-
-        const buildBody = () => {
+        const sentencePool = () => {
           const allPoolSentences = Array.from(new Set([...(msgParts.upper || []), ...(msgParts.middle || []), ...(msgParts.lower || [])].filter(s => s && s.trim().length > 0)));
           const fallbacks = [
-               "Lakhon students intezaar kar rahe hain authorities se appeal hai result declare karein.",
-               "Hume justice aur transparency chahiye ab aur wait nahi.",
-               "RRB result mien itni deri kyun ho rahi hai jawab do.",
-               "Students ke future ke sath mat khelo exams clear hone ke baad bhi.",
-               "It's been so long, we intensely demand clarity from officials.",
-               "Board ko humari genuine maangeni jald sunni padegi.",
-               "Time barbaad ho raha hai candidates ki umar nikal rahi hai.",
-               "Fast execution and timely results are the right of every aspirant.",
-               "Parivar aur students ki mental tension roj badhti ja rahi hai.",
-               "Please clear the results NOW and officially release the full timeline!",
-               "Dhyan de ki RRB delay ke karan lakho yuvao ka bhavishya ruka hai.",
-               "Jaldi results nikal kar joining process shuru karo yahi maang hai."
+            'Lakhon students intezaar kar rahe hain authorities se appeal hai result declare karein.',
+            'Hume justice aur transparency chahiye ab aur wait nahi.',
+            'RRB result mien itni deri kyun ho rahi hai jawab do.',
+            'Students ke future ke sath mat khelo exams clear hone ke baad bhi.',
+            "It's been so long, we intensely demand clarity from officials.",
+            'Board ko humari genuine maangeni jald sunni padegi.',
+            'Time barbaad ho raha hai candidates ki umar nikal rahi hai.',
+            'Fast execution and timely results are the right of every aspirant.',
+            'Parivar aur students ki mental tension roj badhti ja rahi hai.',
+            'Please clear the results NOW and officially release the full timeline!',
+            'Dhyan de ki RRB delay ke karan lakho yuvao ka bhavishya ruka hai.',
+            'Jaldi results nikal kar joining process shuru karo yahi maang hai.'
           ];
-          const combinedPool = allPoolSentences.length >= 6 ? allPoolSentences : Array.from(new Set([...allPoolSentences, ...fallbacks]));
+          return allPoolSentences.length >= 6 ? allPoolSentences : Array.from(new Set([...allPoolSentences, ...fallbacks]));
+        };
 
-          const pool = [...combinedPool].sort(() => 0.5 - Math.random());
-          let body = "";
-          let chunks = 0;
-          
+        // Priority: (1) mandatory hashtag in tag line (2) full pool sentences in body (3) remaining → static (pinned + shuffled pool) then max 1 dynamic (pinned or shuffled pool).
+        const buildBodyParts = (maxLen) => {
+          const pool = [...sentencePool()].sort(() => 0.5 - Math.random());
+          const parts = [];
           for (const sent of pool) {
-              if (chunks >= 2) break; 
-              body = normalize(body ? `${body} ${sent}` : sent);
-              chunks++;
+            const s = normalize(sent);
+            if (!s) continue;
+            const candidate = normalize(parts.length ? [...parts, s].join(' ') : s);
+            if (candidate.length <= maxLen) parts.push(s);
+            else break;
           }
-          return body;
+          return parts;
         };
 
-        const pickUnique = (pool, count, excludeSet) => {
-          const shuffled = [...pool].sort(() => 0.5 - Math.random());
-          const out = [];
-          for (const t of shuffled) {
-            const key = String(t).toLowerCase();
-            if (excludeSet.has(key)) continue;
-            out.push(t);
-            excludeSet.add(key);
-            if (out.length >= count) break;
-          }
-          return out;
-        };
-
-        const buildTagBlock = (staticCount, dynamicCount) => {
+        const buildTagLine = (maxLen) => {
+          const must = mandatoryHashtag;
+          if (maxLen <= must.length) return must;
+          const tokens = [];
           const used = new Set();
-          const sPinned = getTagPools.staticPinned || [];
-          const dPinned = getTagPools.dynamicPinned || [];
-          sPinned.forEach(t => used.add(String(t).toLowerCase()));
-          dPinned.forEach(t => used.add(String(t).toLowerCase()));
+          const withMustLen = () => normalize([...tokens, must].join(' ')).length;
 
-          const sRand = pickUnique(getTagPools.staticPool || [], Math.max(0, staticCount), used);
-          const dRand = pickUnique(getTagPools.dynamicPool || [], Math.max(0, dynamicCount), used);
-
-          return normalize(`${[...dPinned, ...dRand, ...sPinned, ...sRand].join(' ')} ${hashtag}`);
-        };
-
-        const fitToLimit = (body, tagBlock) => {
-          const sep = "\n\n";
-          let b = normalize(body);
-          let t = normalize(tagBlock);
-          const MIN_BODY_CHARS = 140;
-
-          const trimTagBlockForBody = (tagText, minBodyChars) => {
-            let tags = normalize(tagText);
-            if (!tags) return tags;
-            const allTokens = tags.split(' ').filter(Boolean);
-            const mustKeep = allTokens.filter(tok => tok.toLowerCase() === mandatoryHashtag.toLowerCase());
-            let tokens = allTokens.filter(tok => tok.toLowerCase() !== mandatoryHashtag.toLowerCase());
-            while (tokens.length >= 0) {
-              const candidate = normalize(`${tokens.join(' ')} ${mustKeep.join(' ')}`);
-              const allowedBody = TWITTER_LIMIT - (sep.length + candidate.length);
-              if (allowedBody >= minBodyChars) return candidate;
-              if (tokens.length === 0) break;
+          const tryAdd = (raw) => {
+            const x = normalize(raw);
+            if (!x || used.has(x.toLowerCase())) return false;
+            if (x.toLowerCase() === must.toLowerCase()) return false;
+            tokens.push(x);
+            used.add(x.toLowerCase());
+            if (withMustLen() > maxLen) {
               tokens.pop();
+              used.delete(x.toLowerCase());
+              return false;
             }
-            return normalize(mustKeep.join(' '));
+            return true;
           };
 
-          // shrink tags first (user explicitly requested 3 static, 1 dynamic max)
-          for (let dyn = 1; dyn >= 0; dyn--) {
-            for (let st = 3; st >= 0; st--) {
-              t = buildTagBlock(st, dyn);
-              t = trimTagBlockForBody(t, MIN_BODY_CHARS);
-              let full = `${b}${sep}${t}`;
-              if (full.length <= TWITTER_LIMIT) {
-                const bodyOnly = normalize(full.split(sep)[0] || '');
-                if (bodyOnly.length >= Math.min(MIN_BODY_CHARS, b.length)) return ensureMandatoryHashtag(full);
-              }
+          for (const t of (getTagPools.staticPinned || [])) tryAdd(t);
+          for (const t of [...(getTagPools.staticPool || [])].sort(() => 0.5 - Math.random())) tryAdd(t);
+
+          let addedDyn = false;
+          for (const t of (getTagPools.dynamicPinned || [])) {
+            if (tryAdd(t)) { addedDyn = true; break; }
+          }
+          if (!addedDyn) {
+            for (const t of [...(getTagPools.dynamicPool || [])].sort(() => 0.5 - Math.random())) {
+              if (tryAdd(t)) break;
             }
           }
-
-          // if still too long, trim body to fit
-          const baseTags = buildTagBlock(0, 0);
-          const safeBaseTags = trimTagBlockForBody(baseTags, MIN_BODY_CHARS);
-          const allowedBody = Math.max(0, TWITTER_LIMIT - (sep.length + safeBaseTags.length));
-          if (b.length > allowedBody) {
-             let trimmed = b.slice(0, allowedBody);
-             const lastSpace = trimmed.lastIndexOf(' ');
-             if (lastSpace > 0) trimmed = trimmed.slice(0, lastSpace);
-             b = normalize(trimmed).replace(/[.,!?\s]+$/g, '');
-          }
-          return ensureMandatoryHashtag(`${b}${sep}${safeBaseTags}`);
+          return normalize([...tokens, must].join(' '));
         };
 
-        // Uniqueness: retry a few times before falling back
+        const composeOne = () => {
+          const minTag = mandatoryHashtag;
+          let maxBody = TWITTER_LIMIT - sep.length - minTag.length;
+          if (maxBody < 50) maxBody = 50;
+          let parts = buildBodyParts(maxBody);
+          if (parts.length === 0) parts = [normalize(sentencePool()[0] || minTag)];
+
+          const shrinkTagsThenBody = (bodyParts) => {
+            let bp = [...bodyParts];
+            for (let guard = 0; guard < 40 && bp.length; guard++) {
+              const bodyStr = normalize(bp.join(' '));
+              let rem = TWITTER_LIMIT - sep.length - bodyStr.length;
+              let tags = buildTagLine(Math.max(minTag.length, rem));
+              let full = `${bodyStr}${sep}${tags}`;
+              if (full.length <= TWITTER_LIMIT) return ensureMandatoryHashtag(full);
+              bp.pop();
+            }
+            let bodyStr = normalize(bp.join(' ')) || normalize(sentencePool()[0] || minTag);
+            let rem = TWITTER_LIMIT - sep.length - bodyStr.length;
+            let tags = buildTagLine(Math.max(minTag.length, rem));
+            let full = `${bodyStr}${sep}${tags}`;
+            for (let s = 0; s < 60 && full.length > TWITTER_LIMIT && bodyStr.length > 24; s++) {
+              const cut = bodyStr.lastIndexOf(' ');
+              bodyStr = (cut > 20 ? bodyStr.slice(0, cut) : bodyStr.slice(0, Math.max(20, bodyStr.length - 12))).trim();
+              rem = TWITTER_LIMIT - sep.length - bodyStr.length;
+              tags = buildTagLine(Math.max(minTag.length, rem));
+              full = `${bodyStr}${sep}${tags}`;
+            }
+            return ensureMandatoryHashtag(full.length > TWITTER_LIMIT ? full.slice(0, TWITTER_LIMIT) : full);
+          };
+
+          return shrinkTagsThenBody(parts);
+        };
+
         for (let i = 0; i < 150; i++) {
-          const body = buildBody();
-          const bodyNoHash = normalize(body.replace(/#[A-Za-z0-9_]+/g, '').trim());
-          const candidate = fitToLimit(body, buildTagBlock(3, 1));
+          const candidate = composeOne();
+          const bodyNoHash = normalize((candidate.split(sep)[0] || '').replace(/#[A-Za-z0-9_]+/g, '').trim());
           if (!usedAutoBodiesRef.current.has(bodyNoHash)) {
             usedAutoMessagesRef.current.add(candidate);
             usedAutoBodiesRef.current.add(bodyNoHash);
@@ -1326,11 +1322,10 @@
           }
         }
 
-        const fbBody = buildBody();
-        const fallback = ensureMandatoryHashtag(fitToLimit(fbBody, buildTagBlock(0, 0)));
-        usedAutoMessagesRef.current.add(fallback);
-        usedAutoBodiesRef.current.add(normalize(fbBody.replace(/#[A-Za-z0-9_]+/g, '').trim()));
-        return fallback;
+        const candidate = composeOne();
+        usedAutoMessagesRef.current.add(candidate);
+        usedAutoBodiesRef.current.add(normalize((candidate.split(sep)[0] || '').replace(/#[A-Za-z0-9_]+/g, '').trim()));
+        return ensureMandatoryHashtag(candidate);
       };
 
       const getOrGenerateContentForId = (id) => {
@@ -2812,6 +2807,11 @@
             </div>
           )}
           <div className="text-center p-4 mt-8 opacity-70 text-sm font-semibold tracking-widest text-[#1DA1F2]">Made with ❤️ by Siddhartha</div>
+          {effectiveIsLiveMode && (
+            <div className="max-w-4xl mx-auto text-center px-4 pb-8 opacity-50 text-[10px] text-gray-400">
+              Terms of Use: This website is a helper utility for generating tweet templates. By using this tool, you agree that you are solely responsible for the content posted from your account. We do not store any personal data or login credentials.
+            </div>
+          )}
         </div>
       );
     }
