@@ -1100,6 +1100,9 @@
       const [liveLevels, setLiveLevels] = useState({ tweets: 1, retweets: 1, quotes: 1, replies: 1 });
       const levels = effectiveIsLiveMode ? liveLevels : demoLevels;
 
+      const [liveRounds, setLiveRounds] = useState({ tweets: 1, retweets: 1, quotes: 1, replies: 1 });
+      const rounds = effectiveIsLiveMode ? liveRounds : { tweets: 1, retweets: 1, quotes: 1, replies: 1 };
+
       const [combo, setCombo] = useState(0);
       const [demoTotalClicks, setDemoTotalClicks] = useState(() => {
         const saved = localStorage.getItem('campaign_demoTotalClicks');
@@ -1114,6 +1117,39 @@
       const [celebration, setCelebration] = useState(null);
       const [activeBadge, setActiveBadge] = useState(null);
       const [unlockedBadges, setUnlockedBadges] = useState([]);
+
+      const advancingRoundsRef = useRef({ tweets: false, retweets: false, quotes: false, replies: false });
+
+      useEffect(() => {
+        if (!effectiveIsLiveMode) return;
+        const checkRoundAdvance = (type, items) => {
+          if (items.length > 0 && items.every(c => c.completed)) {
+            if (!advancingRoundsRef.current[type]) {
+              advancingRoundsRef.current[type] = true;
+              fetch('/api/action/next-round', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type })
+              }).then(res => res.json()).then(data => {
+                if (data.success && data.userProgress) {
+                  setLiveCompletedIds(data.userProgress.completedCardIds || []);
+                  setLiveRounds(data.userProgress.rounds || { tweets: 1, retweets: 1, quotes: 1, replies: 1 });
+                  setLiveLevels(data.userProgress.levels || { tweets: 1, retweets: 1, quotes: 1, replies: 1 });
+                  // Add a small delay before unlocking the mutex to prevent race loops
+                  setTimeout(() => { advancingRoundsRef.current[type] = false; }, 2000);
+                } else {
+                  advancingRoundsRef.current[type] = false;
+                }
+              }).catch(() => { advancingRoundsRef.current[type] = false; });
+            }
+          }
+        };
+
+        checkRoundAdvance('tweets', liveTweets);
+        checkRoundAdvance('retweets', liveRetweets);
+        checkRoundAdvance('quotes', liveQuotes);
+        checkRoundAdvance('replies', liveReplies);
+      }, [liveTweets, liveRetweets, liveQuotes, liveReplies, effectiveIsLiveMode]);
 
       // Update Demo card lists when completed IDs change (to keep them in sync if needed)
       useEffect(() => {
@@ -1456,6 +1492,7 @@
               setLiveUserStats(data.userProgress.stats || { tweets: 0, retweets: 0, quotes: 0, replies: 0 });
               setLiveTotalClicks(data.userProgress.totalClicks || 0);
               setLiveLevels(data.userProgress.levels || { tweets: 1, retweets: 1, quotes: 1, replies: 1 });
+              setLiveRounds(data.userProgress.rounds || { tweets: 1, retweets: 1, quotes: 1, replies: 1 });
               setUnlockedBadges(data.userProgress.unlockedBadges || []);
             }
             if (data.watchdog) {
@@ -2383,8 +2420,11 @@
               return (
                 <div className="mb-6">
                   <div className="flex justify-between items-end border-b border-gray-800 pb-2 mb-3">
-                    <h2 className="text-2xl font-black text-white flex items-center gap-2">
+                    <h2 className="text-2xl font-black text-white flex items-center gap-2 relative">
                       Level <span style={{ color: accentColor }}>{cardPageLevel}</span>
+                      <span className="ml-2 uppercase tracking-widest text-[9px] md:text-[10px] font-black bg-gradient-to-r from-yellow-500 to-yellow-600 text-black px-2 py-0.5 rounded shadow-[0_0_10px_rgba(234,179,8,0.4)] border border-yellow-300/50 -rotate-2">
+                        Round {rounds[activeTab]}
+                      </span>
                     </h2>
                     <span className="text-sm text-gray-500 font-bold uppercase tracking-widest">
                       {levelCompleted} / {levelTotal} Completed

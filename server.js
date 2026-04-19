@@ -180,6 +180,12 @@ const userProgressSchema = new mongoose.Schema({
         quotes: { type: Number, default: 1 },
         replies: { type: Number, default: 1 }
     },
+    rounds: {
+        tweets: { type: Number, default: 1 },
+        retweets: { type: Number, default: 1 },
+        quotes: { type: Number, default: 1 },
+        replies: { type: Number, default: 1 }
+    },
     unlockedBadges: [{ type: String }],
     lastActive: { type: Date, default: Date.now }
 });
@@ -541,11 +547,58 @@ app.post('/api/action', async (req, res) => {
                 stats: userProgress.stats,
                 totalClicks: userProgress.totalClicks,
                 levels: userProgress.levels,
+                rounds: userProgress.rounds,
                 unlockedBadges: userProgress.unlockedBadges
             }
         });
     } catch (err) {
         console.error('POST /api/action error:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// ── POST /api/action/next-round ── Advance user to next round for a tab
+app.post('/api/action/next-round', async (req, res) => {
+    try {
+        const ip = getClientIP(req);
+        const { type } = req.body;
+        
+        if (!['tweets', 'retweets', 'quotes', 'replies'].includes(type)) {
+            return res.status(400).json({ error: 'Invalid type' });
+        }
+
+        const userProgress = await getOrCreateUserProgress(ip);
+        
+        // Find all content IDs for this type
+        const contentItems = await Content.find({ type }, '_id');
+        const contentIds = contentItems.map(c => c._id.toString());
+        
+        // Remove these IDs from user's completed IDs natively
+        userProgress.completedCardIds = userProgress.completedCardIds.filter(id => !contentIds.includes(id));
+        
+        // Increment round
+        if (!userProgress.rounds) userProgress.rounds = { tweets: 1, retweets: 1, quotes: 1, replies: 1 };
+        userProgress.rounds[type] = (userProgress.rounds[type] || 1) + 1;
+        
+        // Reset level to 1 for the new round
+        if (!userProgress.levels) userProgress.levels = { tweets: 1, retweets: 1, quotes: 1, replies: 1 };
+        userProgress.levels[type] = 1;
+        
+        await userProgress.save();
+        
+        res.json({
+            success: true,
+            userProgress: {
+                completedCardIds: userProgress.completedCardIds,
+                stats: userProgress.stats,
+                totalClicks: userProgress.totalClicks,
+                levels: userProgress.levels,
+                rounds: userProgress.rounds,
+                unlockedBadges: userProgress.unlockedBadges
+            }
+        });
+    } catch (err) {
+        console.error('POST /api/action/next-round error:', err);
         res.status(500).json({ error: 'Server error' });
     }
 });
