@@ -1220,18 +1220,20 @@ const ensureLiveTweetCards = async ({ targetCount = 500, hashtag = '#declare_rrb
  const sep = '\n\n';
  const TW = 280;
 
- const buildTagLineForLimit = (maxLen) => {
- if (maxLen <= mustTag.length) return mustTag;
+ const overhead = mustTag.length + sep.length + sep.length;
+
+ const buildMentionsForLimit = (maxLen) => {
+ if (maxLen <= 0) return '';
  const tokens = [];
  const used = new Set();
- const withMustLen = () => normalizeText([...tokens, mustTag].join(' ')).length;
+ const lineLen = () => normalizeText(tokens.join(' ')).length;
  const tryAdd = (raw) => {
  const x = normalizeText(raw);
  if (!x || used.has(x.toLowerCase())) return false;
  if (x.toLowerCase() === mustTag.toLowerCase()) return false;
  tokens.push(x);
  used.add(x.toLowerCase());
- if (withMustLen() > maxLen) {
+ if (lineLen() > maxLen) {
  tokens.pop();
  used.delete(x.toLowerCase());
  return false;
@@ -1249,15 +1251,16 @@ const ensureLiveTweetCards = async ({ targetCount = 500, hashtag = '#declare_rrb
  if (tryAdd(t)) break;
  }
  }
- return normalizeText([...tokens, mustTag].join(' '));
+ return normalizeText(tokens.join(' '));
  };
 
  const ensureMandatoryOnFull = (text) => {
  const out = normalizeText(text);
+ if (!mustTag) return out;
  const esc = mustTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
- const re = new RegExp(`(^|\\s)${esc}(?=\\s|$)`, 'i');
- if (re.test(out)) return out;
- return normalizeText(`${out} ${mustTag}`);
+ if (new RegExp(`^${esc}(?=\\s|$)`, 'i').test(out)) return out;
+ if (new RegExp(`(^|\\s)${esc}(?=\\s|$)`, 'i').test(out)) return out;
+ return normalizeText(`${mustTag}${sep}${out}`);
  };
 
  const buildBodyParts = (maxLen) => {
@@ -1278,23 +1281,28 @@ const ensureLiveTweetCards = async ({ targetCount = 500, hashtag = '#declare_rrb
  if (parts.length === 0) parts = [normalizeText(combinedPool[0] || mustTag)];
  let bodyStr = normalizeText(parts.join(' '));
  bodyStr = normalizeText(bodyStr.replace(/#[A-Za-z0-9_]+/g, ' ').replace(/\s+/g, ' ').trim()) || normalizeText(combinedPool[0] || mustTag);
- let rem = TW - sep.length - bodyStr.length;
- let tags = buildTagLineForLimit(Math.max(mustTag.length, rem));
- let full = `${bodyStr}${sep}${tags}`;
+ let remMen = TW - overhead - bodyStr.length;
+ let mentions = buildMentionsForLimit(Math.max(0, remMen));
+ let full = mentions ? `${mustTag}${sep}${bodyStr}${sep}${mentions}` : `${mustTag}${sep}${bodyStr}`;
  for (let g = 0; g < 55 && full.length > TW && parts.length > 1; g++) {
  parts.pop();
  bodyStr = normalizeText(parts.join(' ')).replace(/#[A-Za-z0-9_]+/g, ' ').replace(/\s+/g, ' ').trim() || normalizeText(combinedPool[0] || mustTag);
- rem = TW - sep.length - bodyStr.length;
- tags = buildTagLineForLimit(Math.max(mustTag.length, rem));
- full = `${bodyStr}${sep}${tags}`;
+ remMen = TW - overhead - bodyStr.length;
+ mentions = buildMentionsForLimit(Math.max(0, remMen));
+ full = mentions ? `${mustTag}${sep}${bodyStr}${sep}${mentions}` : `${mustTag}${sep}${bodyStr}`;
  }
  for (let s = 0; s < 70 && full.length > TW && bodyStr.length > 24; s++) {
  const cut = bodyStr.lastIndexOf(' ');
  bodyStr = (cut > 20 ? bodyStr.slice(0, cut) : bodyStr.slice(0, Math.max(20, bodyStr.length - 12))).trim();
  bodyStr = normalizeText(bodyStr.replace(/#[A-Za-z0-9_]+/g, ' ').replace(/\s+/g, ' ').trim()) || mustTag;
- rem = TW - sep.length - bodyStr.length;
- tags = buildTagLineForLimit(Math.max(mustTag.length, rem));
- full = `${bodyStr}${sep}${tags}`;
+ remMen = TW - overhead - bodyStr.length;
+ mentions = buildMentionsForLimit(Math.max(0, remMen));
+ full = mentions ? `${mustTag}${sep}${bodyStr}${sep}${mentions}` : `${mustTag}${sep}${bodyStr}`;
+ }
+ if (full.length > TW) {
+ remMen = Math.max(0, TW - overhead - bodyStr.length);
+ mentions = buildMentionsForLimit(remMen);
+ full = mentions ? `${mustTag}${sep}${bodyStr}${sep}${mentions}` : `${mustTag}${sep}${bodyStr}`;
  }
  full = full.length > TW ? full.slice(0, TW) : full;
  return ensureMandatoryOnFull(full);
@@ -1311,7 +1319,7 @@ const ensureLiveTweetCards = async ({ targetCount = 500, hashtag = '#declare_rrb
 
  let final = '';
  for (let i = 0; i < 150; i++) {
- const maxBody = Math.max(50, TW - sep.length - mustTag.length);
+ const maxBody = Math.max(50, TW - overhead - 24);
  const parts = buildBodyParts(maxBody);
  const bodyNoHash = normalizeText(parts.join(' ').replace(/#[A-Za-z0-9_]+/g, '').trim());
  const candidate = composeTweetFromParts(parts);
