@@ -1159,105 +1159,7 @@ const normalizeText = (s) => String(s || '')
  .replace(/\s+/g, ' ')
  .trim();
 
-const extractHashtags = (s) => {
- const tags = (String(s || '').match(/#[A-Za-z0-9_]+/g) || []).map(t => t.trim());
- // keep order but unique
- const out = [];
- const seen = new Set();
- for (const t of tags) {
- const key = t.toLowerCase();
- if (!seen.has(key)) { seen.add(key); out.push(t); }
- }
- return out;
-};
-
-const pickRand = (arr) => (arr && arr.length) ? arr[Math.floor(Math.random() * arr.length)] : '';
-
-const buildTagBlock = ({ staticPinned = [], staticPool = [], dynamicPinned = [], dynamicPool = [], hashtag, extraHashtags = [], staticRandomCount = 3, dynamicRandomCount = 3 }) => {
- const pickUnique = (pool, count, excludeSet) => {
- const shuffled = [...pool].sort(() => 0.5 - Math.random());
- const out = [];
- for (const t of shuffled) {
- const key = String(t).toLowerCase();
- if (excludeSet.has(key)) continue;
- out.push(t);
- excludeSet.add(key);
- if (out.length >= count) break;
- }
- return out;
- };
-
- const used = new Set();
- const sPinned = (staticPinned || []).filter(Boolean);
- const dPinned = (dynamicPinned || []).filter(Boolean);
- sPinned.forEach(t => used.add(String(t).toLowerCase()));
- dPinned.forEach(t => used.add(String(t).toLowerCase()));
-
- const sRand = pickUnique(staticPool || [], Math.max(0, staticRandomCount), used);
- const dRand = pickUnique(dynamicPool || [], Math.max(0, dynamicRandomCount), used);
-
- const tagsBlock = normalizeText([...dPinned, ...dRand, ...sPinned, ...sRand].join(' '));
- const allHash = [hashtag, ...extraHashtags].filter(Boolean);
- const hashUnique = [];
- const seen = new Set();
- for (const h of allHash) {
- const t = h.startsWith('#') ? h : `#${h}`;
- const key = t.toLowerCase();
- if (!seen.has(key)) { seen.add(key); hashUnique.push(t); }
- }
- return normalizeText(`${tagsBlock} ${hashUnique.join(' ')}`);
-};
-
-const fitToTwitterLimit = (body, tagBlock, limit = 280, mandatoryHashtag = '') => {
- const sep = '\n\n';
- let b = normalizeText(body);
- let t = normalizeText(tagBlock);
- const MIN_BODY_CHARS = 165;
- const mustTag = mandatoryHashtag ? (mandatoryHashtag.startsWith('#') ? mandatoryHashtag : `#${mandatoryHashtag}`) : '';
- const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
- const ensureMandatoryHashtag = (text) => {
- const out = normalizeText(text);
- if (!mustTag) return out;
- if (!out) return mustTag;
- const re = new RegExp(`(^|\\s)${escapeRegex(mustTag)}(?=\\s|$)`, 'i');
- if (re.test(out)) return out;
- return normalizeText(`${out} ${mustTag}`);
- };
-
- const trimTagBlockForBody = (tags, minBodyChars) => {
- let clean = normalizeText(tags);
- if (!clean) return clean;
- const allTokens = clean.split(' ').filter(Boolean);
- const mustKeep = mustTag ? allTokens.filter(tok => tok.toLowerCase() === mustTag.toLowerCase()) : [];
- let tokens = mustTag ? allTokens.filter(tok => tok.toLowerCase() !== mustTag.toLowerCase()) : allTokens;
- while (tokens.length >= 0) {
- const candidate = normalizeText(`${tokens.join(' ')} ${mustKeep.join(' ')}`);
- const allowedBody = limit - (sep.length + candidate.length);
- if (allowedBody >= minBodyChars) return candidate;
- if (tokens.length === 0) break;
- tokens.pop();
- }
- return normalizeText(mustKeep.join(' '));
- };
-
- t = trimTagBlockForBody(t, MIN_BODY_CHARS);
-
- let full = `${b}${sep}${t}`;
- if (full.length <= limit) return ensureMandatoryHashtag(full);
-
- // Trim body to fit (tags kept)
- const allowedBody = Math.max(0, limit - (sep.length + t.length));
- if (b.length > allowedBody) {
-   let trimmed = b.slice(0, allowedBody);
-   const lastSpace = trimmed.lastIndexOf(' ');
-   if (lastSpace > 0) trimmed = trimmed.slice(0, lastSpace);
-   b = normalizeText(trimmed).replace(/[.,!?\s]+$/g, '');
- }
- full = `${b}${sep}${t}`;
- return ensureMandatoryHashtag(full);
-};
-
-const ensureLiveTweetCards = async ({ targetCount = 500, hashtag = '#declare_rrbntpc2024_result', tagSettings } = {}) => {
+const ensureLiveTweetCards = async ({ targetCount = 500, hashtag = '#declare_rrbntpc2024_result', tagSettings, refill = false } = {}) => {
  const primaryHashtag = hashtag && String(hashtag).trim() ? String(hashtag).trim() : '#declare_rrbntpc2024_result';
 
  const normalizeTag = (t) => normalizeText(String(t || '')).split(' ')[0];
@@ -1270,6 +1172,10 @@ const ensureLiveTweetCards = async ({ targetCount = 500, hashtag = '#declare_rrb
 
  const staticPool = staticArr.filter(x => x && x.tag && !x.pinned).map(x => normalizeTag(x.tag)).filter(Boolean);
  const dynamicPool = dynamicArr.filter(x => x && x.tag && !x.pinned).map(x => normalizeTag(x.tag)).filter(Boolean);
+
+ if (refill) {
+ await Content.updateMany({ type: 'tweet' }, { $set: { text: '' } });
+ }
 
  const existing = await Content.find({ type: 'tweet' }).sort({ createdAt: 1 });
  const need = Math.max(0, targetCount - existing.length);
@@ -1310,18 +1216,88 @@ const ensureLiveTweetCards = async ({ targetCount = 500, hashtag = '#declare_rrb
  ];
  const combinedPool = allPoolSentences.length >= 6 ? allPoolSentences : Array.from(new Set([...allPoolSentences, ...fallbacks]));
 
- const buildBody = () => {
- const pool = [...combinedPool].sort(() => 0.5 - Math.random());
- let base = "";
- let chunks = 0;
- 
- // Short and crisp: exactly 2 lines (chunks)
- for (const sent of pool) {
- if (chunks >= 2) break; 
- base = normalizeText(base ? `${base} ${sent}` : sent);
- chunks++;
+ const mustTag = primaryHashtag.trim().startsWith('#') ? primaryHashtag.trim() : `#${primaryHashtag.trim()}`;
+ const sep = '\n\n';
+ const TW = 280;
+
+ const buildTagLineForLimit = (maxLen) => {
+ if (maxLen <= mustTag.length) return mustTag;
+ const tokens = [];
+ const used = new Set();
+ const withMustLen = () => normalizeText([...tokens, mustTag].join(' ')).length;
+ const tryAdd = (raw) => {
+ const x = normalizeText(raw);
+ if (!x || used.has(x.toLowerCase())) return false;
+ if (x.toLowerCase() === mustTag.toLowerCase()) return false;
+ tokens.push(x);
+ used.add(x.toLowerCase());
+ if (withMustLen() > maxLen) {
+ tokens.pop();
+ used.delete(x.toLowerCase());
+ return false;
  }
- return base;
+ return true;
+ };
+ for (const t of staticPinned) tryAdd(t);
+ for (const t of [...staticPool].sort(() => 0.5 - Math.random())) tryAdd(t);
+ let dynOk = false;
+ for (const t of dynamicPinned) {
+ if (tryAdd(t)) { dynOk = true; break; }
+ }
+ if (!dynOk) {
+ for (const t of [...dynamicPool].sort(() => 0.5 - Math.random())) {
+ if (tryAdd(t)) break;
+ }
+ }
+ return normalizeText([...tokens, mustTag].join(' '));
+ };
+
+ const ensureMandatoryOnFull = (text) => {
+ const out = normalizeText(text);
+ const esc = mustTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+ const re = new RegExp(`(^|\\s)${esc}(?=\\s|$)`, 'i');
+ if (re.test(out)) return out;
+ return normalizeText(`${out} ${mustTag}`);
+ };
+
+ const buildBodyParts = (maxLen) => {
+ const pool = [...combinedPool].sort(() => 0.5 - Math.random());
+ const parts = [];
+ for (const sent of pool) {
+ const s = normalizeText(sent);
+ if (!s) continue;
+ const candidate = normalizeText(parts.length ? [...parts, s].join(' ') : s);
+ if (candidate.length <= maxLen) parts.push(s);
+ else break;
+ }
+ return parts;
+ };
+
+ const composeTweetFromParts = (partsIn) => {
+ let parts = [...partsIn];
+ if (parts.length === 0) parts = [normalizeText(combinedPool[0] || mustTag)];
+ let bodyStr = normalizeText(parts.join(' '));
+ bodyStr = normalizeText(bodyStr.replace(/#[A-Za-z0-9_]+/g, ' ').replace(/\s+/g, ' ').trim()) || normalizeText(combinedPool[0] || mustTag);
+ let rem = TW - sep.length - bodyStr.length;
+ let tags = buildTagLineForLimit(Math.max(mustTag.length, rem));
+ let full = `${bodyStr}${sep}${tags}`;
+ for (let g = 0; g < 55 && full.length > TW && parts.length > 1; g++) {
+ parts.pop();
+ bodyStr = normalizeText(parts.join(' ')).replace(/#[A-Za-z0-9_]+/g, ' ').replace(/\s+/g, ' ').trim() || normalizeText(combinedPool[0] || mustTag);
+ rem = TW - sep.length - bodyStr.length;
+ tags = buildTagLineForLimit(Math.max(mustTag.length, rem));
+ full = `${bodyStr}${sep}${tags}`;
+ }
+ for (let s = 0; s < 70 && full.length > TW && bodyStr.length > 24; s++) {
+ const cut = bodyStr.lastIndexOf(' ');
+ bodyStr = (cut > 20 ? bodyStr.slice(0, cut) : bodyStr.slice(0, Math.max(20, bodyStr.length - 12))).trim();
+ bodyStr = normalizeText(bodyStr.replace(/#[A-Za-z0-9_]+/g, ' ').replace(/\s+/g, ' ').trim()) || mustTag;
+ rem = TW - sep.length - bodyStr.length;
+ tags = buildTagLineForLimit(Math.max(mustTag.length, rem));
+ full = `${bodyStr}${sep}${tags}`;
+ }
+ full = full.length > TW ? full.slice(0, TW) : full;
+ return ensureMandatoryOnFull(full);
  };
 
  const usedBodies = new Set();
@@ -1333,51 +1309,22 @@ const ensureLiveTweetCards = async ({ targetCount = 500, hashtag = '#declare_rrb
  continue;
  }
 
- // Try multiple candidates to ensure uniqueness
  let final = '';
  for (let i = 0; i < 150; i++) {
- const body = buildBody();
- const extraHashtags = extractHashtags(body);
- // remove hashtags from body to avoid duplication; keep them in tag block
- const bodyNoHash = normalizeText(body.replace(/#[A-Za-z0-9_]+/g, '').trim());
-
- // shrink random picks if needed (pinned remain)
- for (let dyn = 1; dyn >= 0; dyn--) {
- for (let st = 3; st >= 0; st--) {
- const tagBlock = buildTagBlock({
- staticPinned,
- staticPool,
- dynamicPinned,
- dynamicPool,
- hashtag: primaryHashtag,
- extraHashtags,
- staticRandomCount: st,
- dynamicRandomCount: dyn
- });
- const candidate = fitToTwitterLimit(bodyNoHash, tagBlock, 280, primaryHashtag);
- if (candidate.length <= 280 && !usedBodies.has(bodyNoHash) && !used.has(candidate)) {
+ const maxBody = Math.max(50, TW - sep.length - mustTag.length);
+ const parts = buildBodyParts(maxBody);
+ const bodyNoHash = normalizeText(parts.join(' ').replace(/#[A-Za-z0-9_]+/g, '').trim());
+ const candidate = composeTweetFromParts(parts);
+ if (candidate.length <= TW && !usedBodies.has(bodyNoHash) && !used.has(candidate)) {
  final = candidate;
  usedBodies.add(bodyNoHash);
  break;
  }
  }
- if (final) break;
- }
- if (final) break;
- }
 
  if (!final) {
- const body = buildBody() || 'RRB NTPC results must be declared immediately.';
- const tagBlock = buildTagBlock({
- staticPinned,
- staticPool,
- dynamicPinned,
- dynamicPool,
- hashtag: primaryHashtag,
- staticRandomCount: 0,
- dynamicRandomCount: 0
- });
- final = fitToTwitterLimit(body, tagBlock, 280, primaryHashtag);
+ const fb = [normalizeText('RRB NTPC results must be declared immediately.')];
+ final = composeTweetFromParts(fb);
  }
 
  used.add(final);
@@ -1396,13 +1343,14 @@ const ensureLiveTweetCards = async ({ targetCount = 500, hashtag = '#declare_rrb
 // Admin endpoint to ensure 500 live tweets exist and are prefilled
 app.post('/api/admin/ensure-live-tweets', async (req, res) => {
  try {
- const { secret, count, hashtag } = req.body || {};
+ const { secret, count, hashtag, refill } = req.body || {};
  if (secret !== 'Sidd_Secret_99') return res.status(403).json({ success: false, message: 'Unauthorized' });
  const cfg = await getOrCreateConfig();
  const result = await ensureLiveTweetCards({
  targetCount: Number(count) || 500,
  hashtag: hashtag || '#declare_rrbntpc2024_result',
- tagSettings: cfg.tagSettings
+ tagSettings: cfg.tagSettings,
+ refill: !!refill
  });
  res.json({ success: true, ...result });
  } catch (err) {
