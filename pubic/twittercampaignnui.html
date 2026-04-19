@@ -1943,103 +1943,102 @@
         const isMobileUa = /Android|iPhone|iPad|iPod/i.test(ua);
         const openDelayMs = isMobileUa ? 0 : 400;
 
-        setTimeout(() => {
-          const finalId = item.targetId || extractTweetId(item.postLink) || '1234567890';
-          let autoContent = getPreferredContent(item);
-          let url = '';
+        const finalId = item.targetId || extractTweetId(item.postLink) || '1234567890';
+        let autoContent = getPreferredContent(item);
+        let url = '';
+        let clipPlain = '';
 
-          // X Android app often drops ?text= when (1) URL is too long after encodeURIComponent (Hindi explodes byte length)
-          // or (2) many newlines. Flatten + cap encoded length; use x.com for app deep links.
-          const prepareIntentText = (txt) => {
-            let s = String(txt || '');
-            if (isMobileUa) {
-              s = s.replace(/\n\n+/g, '\n').replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
-            }
-            const maxEnc = /Android/i.test(ua) ? 768 : 1900;
-            while (s.length > 24 && encodeURIComponent(s).length > maxEnc) {
-              const sp = s.lastIndexOf(' ');
-              s = sp > 48 ? s.slice(0, sp).trim() : s.slice(0, Math.floor(s.length * 0.88)).trim();
-            }
-            return s;
-          };
-
-          const openIntentUrl = (href, clipboardPlain) => {
-            if (/Android/i.test(ua)) {
-              if (clipboardPlain && navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(clipboardPlain).catch(() => { });
-              }
-              try {
-                const noScheme = href.replace(/^https:\/\//i, '');
-                const intentUri = `intent://${noScheme}#Intent;scheme=https;package=com.twitter.android;S.browser_fallback_url=${encodeURIComponent(href)};end`;
-                const a = document.createElement('a');
-                a.href = intentUri;
-                a.target = '_blank';
-                a.rel = 'noopener noreferrer';
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                return;
-              } catch (_) { /* fall through */ }
-              try {
-                const a = document.createElement('a');
-                a.href = href;
-                a.target = '_blank';
-                a.rel = 'noopener noreferrer';
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                return;
-              } catch (_) { /* fall through */ }
-            }
-            window.open(href, '_blank', 'noopener,noreferrer');
-          };
-
-          let clipPlain = '';
-
-          if (type === 'tweet') {
-            clipPlain = prepareIntentText(autoContent);
-            url = `https://x.com/intent/tweet?text=${encodeURIComponent(clipPlain)}`;
-          } else if (type === 'retweet') {
-            url = `https://twitter.com/intent/retweet?tweet_id=${finalId}`;
-          } else if (type === 'quote') {
-            // Single-tab quote: use intent/tweet with comment + status URL in `text` only.
-            // `compose/post?url=` often makes X open an extra generic composer step or tab first; intent avoids that.
-            let comment = stripTweetUrlsForId(autoContent, finalId);
-            if (item.postLink) {
-              try {
-                const pl = String(item.postLink).trim();
-                if (pl) comment = comment.replace(new RegExp(pl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '').trim();
-              } catch (_) { }
-            }
-            const permalink = `https://x.com/i/web/status/${finalId}`;
-            const currentTag = (watchdogInfo.hashtag || '#Declare_RRBNTPC2024_Result').trim() || '#Declare_RRBNTPC2024_Result';
-            const mandatoryTag = currentTag.startsWith('#') ? currentTag : `#${currentTag}`;
-            const hasTag = new RegExp(`(^|\\s)${mandatoryTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=\\s|$)`, 'i').test(comment);
-            if (!hasTag) comment = `${comment} ${mandatoryTag}`.trim();
-            const sep = '\n\n';
-            const maxComment = Math.max(0, 280 - sep.length - permalink.length);
-            if (comment.length > maxComment) {
-              comment = comment.slice(0, Math.max(0, maxComment - 3)).trim().replace(/[.,!?\s]+$/g, '') + '...';
-              if (!new RegExp(`(^|\\s)${mandatoryTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=\\s|$)`, 'i').test(comment)) {
-                const reserve = Math.max(0, maxComment - (mandatoryTag.length + 1));
-                comment = `${comment.slice(0, reserve).trim()} ${mandatoryTag}`.trim();
-              }
-            }
-            const full = comment ? `${comment}${sep}${permalink}` : permalink;
-            clipPlain = prepareIntentText(full);
-            url = `https://x.com/intent/tweet?text=${encodeURIComponent(clipPlain)}`;
-          } else if (type === 'reply') {
-            clipPlain = prepareIntentText(autoContent);
-            url = `https://x.com/intent/tweet?in_reply_to=${finalId}&text=${encodeURIComponent(clipPlain)}`;
+        const prepareIntentText = (txt) => {
+          let s = String(txt || '');
+          if (isMobileUa) {
+            s = s.replace(/\n\n+/g, '\n').replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
           }
-          if (url) {
-            if (/Android/i.test(ua) && (type === 'tweet' || type === 'quote' || type === 'reply')) {
-              openIntentUrl(url, clipPlain);
-            } else {
+          const maxEnc = /Android/i.test(ua) ? 768 : 1900;
+          while (s.length > 24 && encodeURIComponent(s).length > maxEnc) {
+            const sp = s.lastIndexOf(' ');
+            s = sp > 48 ? s.slice(0, sp).trim() : s.slice(0, Math.floor(s.length * 0.88)).trim();
+          }
+          return s;
+        };
+
+        if (type === 'tweet') {
+          clipPlain = prepareIntentText(autoContent);
+          url = `https://x.com/intent/tweet?text=${encodeURIComponent(clipPlain)}`;
+        } else if (type === 'retweet') {
+          url = `https://twitter.com/intent/retweet?tweet_id=${finalId}`;
+        } else if (type === 'quote') {
+          let comment = stripTweetUrlsForId(autoContent, finalId);
+          if (item.postLink) {
+            try {
+              const pl = String(item.postLink).trim();
+              if (pl) comment = comment.replace(new RegExp(pl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '').trim();
+            } catch (_) { }
+          }
+          const permalink = `https://x.com/i/web/status/${finalId}`;
+          const currentTag = (watchdogInfo.hashtag || '#Declare_RRBNTPC2024_Result').trim() || '#Declare_RRBNTPC2024_Result';
+          const mandatoryTag = currentTag.startsWith('#') ? currentTag : `#${currentTag}`;
+          const hasTag = new RegExp(`(^|\\s)${mandatoryTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=\\s|$)`, 'i').test(comment);
+          if (!hasTag) comment = `${comment} ${mandatoryTag}`.trim();
+          const sep = '\n\n';
+          const maxComment = Math.max(0, 280 - sep.length - permalink.length);
+          if (comment.length > maxComment) {
+            comment = comment.slice(0, Math.max(0, maxComment - 3)).trim().replace(/[.,!?\s]+$/g, '') + '...';
+            if (!new RegExp(`(^|\\s)${mandatoryTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=\\s|$)`, 'i').test(comment)) {
+              const reserve = Math.max(0, maxComment - (mandatoryTag.length + 1));
+              comment = `${comment.slice(0, reserve).trim()} ${mandatoryTag}`.trim();
+            }
+          }
+          const full = comment ? `${comment}${sep}${permalink}` : permalink;
+          clipPlain = prepareIntentText(full);
+          url = `https://x.com/intent/tweet?text=${encodeURIComponent(clipPlain)}`;
+        } else if (type === 'reply') {
+          clipPlain = prepareIntentText(autoContent);
+          url = `https://x.com/intent/tweet?in_reply_to=${finalId}&text=${encodeURIComponent(clipPlain)}`;
+        }
+
+        // Synchronous clipboard write required for mobile Webviews (like Telegram) to not silently fail
+        if (clipPlain && navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(clipPlain).catch(() => { });
+        }
+
+        const executeOpen = () => {
+          if (!url) return;
+          if (/Android/i.test(ua) && (type === 'tweet' || type === 'quote' || type === 'reply')) {
+            try {
+              let intentUri = '';
+              if (url.includes('intent/tweet?text=')) {
+                // Telegram deeply breaks https:// webviews, scheme=twitter bypasses it cleanly
+                const textParam = url.split('text=')[1];
+                intentUri = `intent://post?message=${textParam}#Intent;scheme=twitter;package=com.twitter.android;S.browser_fallback_url=${encodeURIComponent(url)};end`;
+              } else if (url.includes('intent/tweet?in_reply_to=')) {
+                const params = url.split('?')[1];
+                const inRep = params.split('&').find(p => p.startsWith('in_reply_to='))?.split('=')[1] || finalId;
+                const textParam = params.split('&').find(p => p.startsWith('text='))?.split('=')[1] || '';
+                intentUri = `intent://post?in_reply_to_status_id=${inRep}&message=${textParam}#Intent;scheme=twitter;package=com.twitter.android;S.browser_fallback_url=${encodeURIComponent(url)};end`;
+              } else {
+                const noScheme = url.replace(/^https:\/\//i, '');
+                intentUri = `intent://${noScheme}#Intent;scheme=https;package=com.twitter.android;S.browser_fallback_url=${encodeURIComponent(url)};end`;
+              }
+              const a = document.createElement('a');
+              a.href = intentUri;
+              a.target = '_blank';
+              a.rel = 'noopener noreferrer';
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+            } catch (_) {
               window.open(url, '_blank', 'noopener,noreferrer');
             }
+          } else {
+            window.open(url, '_blank', 'noopener,noreferrer');
           }
-        }, openDelayMs);
+        };
+
+        if (openDelayMs > 0) {
+          setTimeout(executeOpen, openDelayMs);
+        } else {
+          executeOpen();
+        }
 
         if (celebrationTimerRef.current) clearTimeout(celebrationTimerRef.current);
         celebrationTimerRef.current = setTimeout(() => {
