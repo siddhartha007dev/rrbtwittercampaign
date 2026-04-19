@@ -961,6 +961,21 @@
 
     // MAIN APP
     function App() {
+
+      // --- GLOBAL TELEGRAM ESCAPE ---
+      const [isTelegramBlocker, setIsTelegramBlocker] = useState(false);
+      useEffect(() => {
+        const ua = navigator.userAgent || '';
+        const isTg = /Telegram/i.test(ua) || /TelegramBot/i.test(ua) || (typeof window !== 'undefined' && window.TelegramWebviewProxy !== undefined);
+        if (isTg && /Android/i.test(ua)) {
+          setIsTelegramBlocker(true);
+          // Try to escape automatically on load
+          const noScheme = window.location.href.replace(/^https?:\/\//i, '');
+          const intentUri = `intent://${noScheme}#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(window.location.href)};end`;
+          window.location.href = intentUri;
+        }
+      }, []);
+
       // Never read previewDemo from localStorage on load — that bypassed pre-launch and opened campaign directly.
       const [previewDemo, setPreviewDemoState] = useState(false);
 
@@ -1996,7 +2011,7 @@
           url = `https://x.com/intent/tweet?in_reply_to=${finalId}&text=${encodeURIComponent(clipPlain)}`;
         }
 
-        // Detect Telegram in-app browser (it strips ?text= params from URLs)
+        // Detect Telegram in-app browser
         const isTelegramWebView = /Telegram/i.test(ua) || /TelegramBot/i.test(ua) || (window.TelegramWebviewProxy !== undefined);
 
         // Also copy to clipboard as safety net
@@ -2019,45 +2034,7 @@
 
         const executeOpen = () => {
           if (!url) return;
-          if (isTelegramWebView && /Android/i.test(ua)) {
-            // Force escape from Telegram WebView on Android to Chrome seamlessly
-            try {
-              const noScheme = url.replace(/^https?:\/\//i, '');
-              // Use explicit Chrome package but provide a fallback. This guarantees escaping the WebView without crashing.
-              const intentUri = `intent://${noScheme}#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(url)};end`;
-              // CRITICAL: Must use window.location.href! a.click() throws ERR_UNKNOWN_URL_SCHEME in Telegram WebView.
-              window.location.href = intentUri;
-            } catch (_) {
-              window.location.href = url;
-            }
-          } else if (/Android/i.test(ua) && (type === 'tweet' || type === 'quote' || type === 'reply')) {
-            try {
-              let intentUri = '';
-              if (url.includes('intent/tweet?text=')) {
-                const textParam = url.split('text=')[1];
-                intentUri = `intent://post?message=${textParam}#Intent;scheme=twitter;package=com.twitter.android;S.browser_fallback_url=${encodeURIComponent(url)};end`;
-              } else if (url.includes('intent/tweet?in_reply_to=')) {
-                const params = url.split('?')[1];
-                const inRep = params.split('&').find(p => p.startsWith('in_reply_to='))?.split('=')[1] || finalId;
-                const textParam = params.split('&').find(p => p.startsWith('text='))?.split('=')[1] || '';
-                intentUri = `intent://post?in_reply_to_status_id=${inRep}&message=${textParam}#Intent;scheme=twitter;package=com.twitter.android;S.browser_fallback_url=${encodeURIComponent(url)};end`;
-              } else {
-                const noScheme = url.replace(/^https:\/\//i, '');
-                intentUri = `intent://${noScheme}#Intent;scheme=https;package=com.twitter.android;S.browser_fallback_url=${encodeURIComponent(url)};end`;
-              }
-              const a = document.createElement('a');
-              a.href = intentUri;
-              a.target = '_blank';
-              a.rel = 'noopener noreferrer';
-              document.body.appendChild(a);
-              a.click();
-              document.body.removeChild(a);
-            } catch (_) {
-              window.open(url, '_blank', 'noopener,noreferrer');
-            }
-          } else {
-            window.open(url, '_blank', 'noopener,noreferrer');
-          }
+          window.open(url, '_blank', 'noopener,noreferrer');
         };
 
         if (openDelayMs > 0) {
@@ -2109,6 +2086,31 @@
 
       return (
         <div className="min-h-screen bg-[#0B111A] text-gray-100 font-sans overflow-x-hidden selection:bg-blue-500 selection:text-white pb-20">
+
+          {/* GLOBAL TELEGRAM BLOCKER */}
+          {isTelegramBlocker && (
+            <div className="fixed inset-0 z-[99999] bg-[#0B111A] flex flex-col items-center justify-center p-6 text-center animate-fade-in">
+              <div className="bg-[#192734] border border-[#1DA1F2]/30 p-8 rounded-3xl max-w-md w-full shadow-2xl">
+                <div className="text-6xl mb-6 animate-bounce">🌐</div>
+                <h2 className="text-2xl font-black text-white mb-4">Launch in External Browser</h2>
+                <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 mb-8">
+                  <p className="text-gray-300 text-sm leading-relaxed">
+                    Telegram's internal browser blocks Twitter features. To participate in the campaign, please open this app in Chrome.
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    const noScheme = window.location.href.replace(/^https?:\/\//i, '');
+                    window.location.href = `intent://${noScheme}#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(window.location.href)};end`;
+                  }}
+                  className="w-full bg-[#1DA1F2] hover:bg-blue-500 text-white font-black py-4 rounded-xl text-lg flex items-center justify-center gap-2 transform transition-all active:scale-95 shadow-[0_10px_30px_rgba(29,161,242,0.3)]"
+                >
+                  🚀 OPEN IN CHROME
+                </button>
+                <p className="text-gray-500 text-xs mt-6">If button fails, tap <b>⋮</b> (Top Right) > <b>Open in Browser</b></p>
+              </div>
+            </div>
+          )}
 
           {/* Admin Telegram Alerts Layer */}
           {(config.adminAlert === 'broadcast' || config.adminAlert === 'boost') && dismissedAlertType !== config.adminAlert && (
