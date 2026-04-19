@@ -1233,7 +1233,7 @@
           let chunks = 0;
           
           for (const sent of pool) {
-              if ((body.length >= 220 && chunks >= 3) || chunks >= 5) break; 
+              if (chunks >= 2) break; 
               body = normalize(body ? `${body} ${sent}` : sent);
               chunks++;
           }
@@ -1288,8 +1288,8 @@
             return normalize(mustKeep.join(' '));
           };
 
-          // shrink tags first (random picks; pinned remain)
-          for (let dyn = 3; dyn >= 0; dyn--) {
+          // shrink tags first (user explicitly requested 3 static, 1 dynamic max)
+          for (let dyn = 1; dyn >= 0; dyn--) {
             for (let st = 3; st >= 0; st--) {
               t = buildTagBlock(st, dyn);
               t = trimTagBlockForBody(t, MIN_BODY_CHARS);
@@ -1305,15 +1305,20 @@
           const baseTags = buildTagBlock(0, 0);
           const safeBaseTags = trimTagBlockForBody(baseTags, MIN_BODY_CHARS);
           const allowedBody = Math.max(0, TWITTER_LIMIT - (sep.length + safeBaseTags.length));
-          if (b.length > allowedBody) b = normalize(b.slice(0, allowedBody)).replace(/[.,!?\s]+$/g, '');
-          return ensureMandatoryHashtag(`${b}${sep}${safeBaseTags}`.slice(0, TWITTER_LIMIT));
+          if (b.length > allowedBody) {
+             let trimmed = b.slice(0, allowedBody);
+             const lastSpace = trimmed.lastIndexOf(' ');
+             if (lastSpace > 0) trimmed = trimmed.slice(0, lastSpace);
+             b = normalize(trimmed).replace(/[.,!?\s]+$/g, '');
+          }
+          return ensureMandatoryHashtag(`${b}${sep}${safeBaseTags}`);
         };
 
         // Uniqueness: retry a few times before falling back
         for (let i = 0; i < 150; i++) {
           const body = buildBody();
           const bodyNoHash = normalize(body.replace(/#[A-Za-z0-9_]+/g, '').trim());
-          const candidate = fitToLimit(body, buildTagBlock(3, 3));
+          const candidate = fitToLimit(body, buildTagBlock(3, 1));
           if (!usedAutoBodiesRef.current.has(bodyNoHash)) {
             usedAutoMessagesRef.current.add(candidate);
             usedAutoBodiesRef.current.add(bodyNoHash);
