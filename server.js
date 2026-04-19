@@ -309,6 +309,7 @@ app.get('/api/live-data', async (req, res) => {
                 stats: userProgress.stats,
                 totalClicks: userProgress.totalClicks,
                 levels: userProgress.levels,
+                rounds: userProgress.rounds || { tweets: 1, retweets: 1, quotes: 1, replies: 1 },
                 unlockedBadges: userProgress.unlockedBadges
             }
         });
