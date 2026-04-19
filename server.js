@@ -1405,6 +1405,26 @@ app.post('/api/reset', async (req, res) => {
     }
 });
 
+// ===== TELEGRAM WEBVIEW BYPASS: Server-side redirect =====
+// Telegram's in-app browser strips ?text= params when opening twitter.com directly.
+// By routing through our own domain first, Telegram sees /go (our domain) — not twitter.com.
+// The 302 redirect then delivers the FULL intent URL to the system browser/Twitter app.
+app.get('/go', (req, res) => {
+    const target = req.query.url;
+    if (!target) return res.status(400).send('Missing url parameter');
+    // Only allow redirects to twitter.com / x.com for security
+    try {
+        const parsed = new URL(target);
+        const allowed = ['twitter.com', 'www.twitter.com', 'x.com', 'www.x.com', 'mobile.twitter.com', 'mobile.x.com'];
+        if (!allowed.includes(parsed.hostname.toLowerCase())) {
+            return res.status(403).send('Redirect not allowed to this domain');
+        }
+    } catch (_) {
+        return res.status(400).send('Invalid URL');
+    }
+    res.redirect(302, target);
+});
+
 // ===== STATIC FILES & SPA CATCH-ALL =====
 app.use(express.static(path.join(__dirname, 'pubic')));
 
