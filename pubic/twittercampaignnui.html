@@ -1101,7 +1101,15 @@
       const levels = effectiveIsLiveMode ? liveLevels : demoLevels;
 
       const [liveRounds, setLiveRounds] = useState({ tweets: 1, retweets: 1, quotes: 1, replies: 1 });
-      const rounds = effectiveIsLiveMode ? liveRounds : { tweets: 1, retweets: 1, quotes: 1, replies: 1 };
+      const [demoRounds, setDemoRounds] = useState(() => {
+        const saved = localStorage.getItem('campaign_demoRounds');
+        return saved ? JSON.parse(saved) : { tweets: 1, retweets: 1, quotes: 1, replies: 1 };
+      });
+      useEffect(() => {
+        localStorage.setItem('campaign_demoRounds', JSON.stringify(demoRounds));
+      }, [demoRounds]);
+      
+      const rounds = effectiveIsLiveMode ? liveRounds : demoRounds;
 
       const [combo, setCombo] = useState(0);
       const [demoTotalClicks, setDemoTotalClicks] = useState(() => {
@@ -1121,7 +1129,27 @@
       const advancingRoundsRef = useRef({ tweets: false, retweets: false, quotes: false, replies: false });
 
       useEffect(() => {
-        if (!effectiveIsLiveMode) return;
+        if (!effectiveIsLiveMode) {
+          const checkRoundAdvanceDemo = (type, items) => {
+            if (items.length > 0 && items.every(c => c.completed)) {
+              if (!advancingRoundsRef.current[type]) {
+                advancingRoundsRef.current[type] = true;
+                
+                const itemIds = items.map(c => c.id || c._id);
+                setDemoCompletedIds(prev => prev.filter(id => !itemIds.includes(id)));
+                setDemoRounds(prev => ({ ...prev, [type]: prev[type] + 1 }));
+                
+                setTimeout(() => { advancingRoundsRef.current[type] = false; }, 500);
+              }
+            }
+          };
+          checkRoundAdvanceDemo('tweets', demoTweets);
+          checkRoundAdvanceDemo('retweets', demoRetweets);
+          checkRoundAdvanceDemo('quotes', demoQuotes);
+          checkRoundAdvanceDemo('replies', demoReplies);
+          return;
+        }
+
         const checkRoundAdvance = (type, items) => {
           if (items.length > 0 && items.every(c => c.completed)) {
             if (!advancingRoundsRef.current[type]) {
@@ -1149,7 +1177,7 @@
         checkRoundAdvance('retweets', liveRetweets);
         checkRoundAdvance('quotes', liveQuotes);
         checkRoundAdvance('replies', liveReplies);
-      }, [liveTweets, liveRetweets, liveQuotes, liveReplies, effectiveIsLiveMode]);
+      }, [liveTweets, liveRetweets, liveQuotes, liveReplies, demoTweets, demoRetweets, demoQuotes, demoReplies, effectiveIsLiveMode]);
 
       // Update Demo card lists when completed IDs change (to keep them in sync if needed)
       useEffect(() => {
