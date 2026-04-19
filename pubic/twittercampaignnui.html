@@ -2020,19 +2020,15 @@
         const executeOpen = () => {
           if (!url) return;
           if (isTelegramWebView && /Android/i.test(ua)) {
-            // Force escape from Telegram WebView on Android to the default external browser (Chrome)
+            // Force escape from Telegram WebView on Android to Chrome seamlessly
             try {
               const noScheme = url.replace(/^https?:\/\//i, '');
-              const intentUri = `intent://${noScheme}#Intent;scheme=https;end`;
-              const a = document.createElement('a');
-              a.href = intentUri;
-              a.target = '_blank';
-              a.rel = 'noopener noreferrer';
-              document.body.appendChild(a);
-              a.click();
-              document.body.removeChild(a);
+              // Use explicit Chrome package but provide a fallback. This guarantees escaping the WebView without crashing.
+              const intentUri = `intent://${noScheme}#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(url)};end`;
+              // CRITICAL: Must use window.location.href! a.click() throws ERR_UNKNOWN_URL_SCHEME in Telegram WebView.
+              window.location.href = intentUri;
             } catch (_) {
-              window.open(url, '_blank', 'noopener,noreferrer');
+              window.location.href = url;
             }
           } else if (/Android/i.test(ua) && (type === 'tweet' || type === 'quote' || type === 'reply')) {
             try {
