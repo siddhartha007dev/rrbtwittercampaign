@@ -1996,18 +1996,37 @@
           url = `https://x.com/intent/tweet?in_reply_to=${finalId}&text=${encodeURIComponent(clipPlain)}`;
         }
 
-        // Synchronous clipboard write required for mobile Webviews (like Telegram) to not silently fail
-        if (clipPlain && navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(clipPlain).catch(() => { });
-        }
+        // Robust clipboard copy that works in ALL webviews (Telegram, Instagram, etc.)
+        const copyToClipboard = (text) => {
+          // Try modern API first
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).catch(() => { });
+          }
+          // Always also try execCommand fallback (works in Telegram WebView)
+          try {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.setAttribute('readonly', '');
+            ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0';
+            document.body.appendChild(ta);
+            ta.select();
+            ta.setSelectionRange(0, text.length);
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+          } catch (_) { }
+        };
+
+        if (clipPlain) copyToClipboard(clipPlain);
+
+        // Detect Telegram in-app browser (it strips ?text= params from URLs)
+        const isTelegramWebView = /Telegram/i.test(ua) || /TelegramBot/i.test(ua) || (window.TelegramWebviewProxy !== undefined);
 
         const executeOpen = () => {
           if (!url) return;
-          if (/Android/i.test(ua) && (type === 'tweet' || type === 'quote' || type === 'reply')) {
+          if (/Android/i.test(ua) && !isTelegramWebView && (type === 'tweet' || type === 'quote' || type === 'reply')) {
             try {
               let intentUri = '';
               if (url.includes('intent/tweet?text=')) {
-                // Telegram deeply breaks https:// webviews, scheme=twitter bypasses it cleanly
                 const textParam = url.split('text=')[1];
                 intentUri = `intent://post?message=${textParam}#Intent;scheme=twitter;package=com.twitter.android;S.browser_fallback_url=${encodeURIComponent(url)};end`;
               } else if (url.includes('intent/tweet?in_reply_to=')) {
@@ -2034,7 +2053,53 @@
           }
         };
 
-        if (openDelayMs > 0) {
+        // For Telegram WebView: show a persistent toast so user knows to paste
+        if (isTelegramWebView && clipPlain && type !== 'retweet') {
+          // Create toast overlay
+          const toast = document.createElement('div');
+          toast.id = 'tg-copy-toast';
+          toast.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);animation:fadeIn 0.2s ease';
+          toast.innerHTML = `
+            <div style="background:linear-gradient(135deg,#15202B,#192734);border:2px solid #1DA1F2;border-radius:20px;padding:28px 24px;max-width:340px;width:90%;text-align:center;box-shadow:0 20px 60px rgba(29,161,242,0.3)">
+              <div style="font-size:48px;margin-bottom:12px;animation:bounce 0.6s ease infinite alternate">📋</div>
+              <h3 style="color:#fff;font-size:18px;font-weight:900;margin:0 0 8px">Tweet Copied!</h3>
+              <p style="color:#8899A6;font-size:13px;margin:0 0 16px;line-height:1.5">
+                Telegram browser mein autofill nahi hota.<br/>
+                <strong style="color:#1DA1F2">Twitter khulega → Long press karein → Paste karein</strong>
+              </p>
+              <div style="background:#0D1117;border:1px solid #30363D;border-radius:12px;padding:12px;margin-bottom:16px;max-height:80px;overflow:hidden;text-align:left">
+                <p style="color:#8B949E;font-size:11px;margin:0;word-break:break-word">${clipPlain.length > 120 ? clipPlain.slice(0, 120) + '...' : clipPlain}</p>
+              </div>
+              <button id="tg-toast-go" style="background:#1DA1F2;color:#fff;border:none;font-weight:900;font-size:15px;padding:14px 32px;border-radius:14px;cursor:pointer;width:100%;letter-spacing:1px;text-transform:uppercase">
+                ✅ Open Twitter & Paste
+              </button>
+            </div>
+          `;
+          // Remove any existing toast
+          const old = document.getElementById('tg-copy-toast');
+          if (old) old.remove();
+          document.body.appendChild(toast);
+
+          // Add bounce animation
+          if (!document.getElementById('tg-toast-style')) {
+            const st = document.createElement('style');
+            st.id = 'tg-toast-style';
+            st.textContent = '@keyframes bounce{0%{transform:translateY(0)}100%{transform:translateY(-8px)}} @keyframes fadeIn{from{opacity:0}to{opacity:1}}';
+            document.head.appendChild(st);
+          }
+
+          // When user taps the button, re-copy (fresh user gesture = guaranteed clipboard) then open Twitter
+          document.getElementById('tg-toast-go').addEventListener('click', () => {
+            copyToClipboard(clipPlain);
+            toast.remove();
+            executeOpen();
+          });
+
+          // Also dismiss on backdrop click
+          toast.addEventListener('click', (e) => {
+            if (e.target === toast) toast.remove();
+          });
+        } else if (openDelayMs > 0) {
           setTimeout(executeOpen, openDelayMs);
         } else {
           executeOpen();
