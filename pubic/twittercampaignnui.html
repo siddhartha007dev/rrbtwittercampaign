@@ -1933,12 +1933,6 @@
           let autoContent = getPreferredContent(item);
           let url = '';
           if (type === 'tweet') {
-            if (cardIndex !== -1 && cardIndex % 3 === 2) {
-              const host = window.location.origin;
-              const suffixUrl = `\n\n${host}/card/${item.id || item._id}`;
-              if (autoContent.length > 245) autoContent = autoContent.substring(0, 245) + '...';
-              autoContent = autoContent + suffixUrl;
-            }
             url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(autoContent)}`;
           } else if (type === 'retweet') {
             url = `https://twitter.com/intent/retweet?tweet_id=${finalId}`;

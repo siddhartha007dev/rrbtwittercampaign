@@ -1247,8 +1247,13 @@ const fitToTwitterLimit = (body, tagBlock, limit = 280, mandatoryHashtag = '') =
 
  // Trim body to fit (tags kept)
  const allowedBody = Math.max(0, limit - (sep.length + t.length));
- if (b.length > allowedBody) b = normalizeText(b.slice(0, allowedBody)).replace(/[.,!?\s]+$/g, '');
- full = `${b}${sep}${t}`.slice(0, limit);
+ if (b.length > allowedBody) {
+   let trimmed = b.slice(0, allowedBody);
+   const lastSpace = trimmed.lastIndexOf(' ');
+   if (lastSpace > 0) trimmed = trimmed.slice(0, lastSpace);
+   b = normalizeText(trimmed).replace(/[.,!?\s]+$/g, '');
+ }
+ full = `${b}${sep}${t}`;
  return ensureMandatoryHashtag(full);
 };
 
