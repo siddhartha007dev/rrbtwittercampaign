@@ -1085,6 +1085,7 @@
       const [liveRetweets, setLiveRetweets] = useState([]);
       const [liveQuotes, setLiveQuotes] = useState([]);
       const [liveReplies, setLiveReplies] = useState([]);
+      const [liveCompletedIds, setLiveCompletedIds] = useState([]);
       const [isLiveLoading, setIsLiveLoading] = useState(true);
       const [hasHydratedFromCache, setHasHydratedFromCache] = useState(false);
 
@@ -1496,6 +1497,7 @@
 
             if (data.content) {
               const userCompleted = data.userProgress?.completedCardIds || [];
+              setLiveCompletedIds(userCompleted);
               const applyProgress = (items) => items.map(item => ({
                 ...item, id: item._id,
                 completed: userCompleted.includes(item._id)
