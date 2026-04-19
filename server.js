@@ -509,7 +509,9 @@ app.post('/api/action', async (req, res) => {
     try {
         const { id, type } = req.body;
         const ip = getClientIP(req);
-        const statKey = type + 's'; // 'tweets' | 'retweets' | 'replies'
+        // Proper plural mapping - 'reply' + 's' = 'replys' (wrong!), must use 'replies'
+        const statKeyMap = { tweet: 'tweets', retweet: 'retweets', quote: 'quotes', reply: 'replies' };
+        const statKey = statKeyMap[type] || (type + 's');
 
         // Get user progress
         const userProgress = await getOrCreateUserProgress(ip);

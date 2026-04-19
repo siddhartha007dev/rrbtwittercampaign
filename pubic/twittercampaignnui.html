@@ -2072,11 +2072,13 @@
               setLiveStats(data.stats);
             }
           } catch (e) { console.error("DB Update Failed"); }
-          setLiveUserStats(prev => ({ ...prev, [type + 's']: prev[type + 's'] + 1 }));
+          const statKeyFE = { tweet: 'tweets', retweet: 'retweets', quote: 'quotes', reply: 'replies' }[type] || (type + 's');
+          setLiveUserStats(prev => ({ ...prev, [statKeyFE]: (prev[statKeyFE] || 0) + 1 }));
           setLiveTotalClicks(prev => prev + 1);
         } else {
-          setDemoStats(prev => ({ ...prev, [type + 's']: prev[type + 's'] + 1 }));
-          setDemoUserStats(prev => ({ ...prev, [type + 's']: prev[type + 's'] + 1 }));
+          const statKeyFE = { tweet: 'tweets', retweet: 'retweets', quote: 'quotes', reply: 'replies' }[type] || (type + 's');
+          setDemoStats(prev => ({ ...prev, [statKeyFE]: (prev[statKeyFE] || 0) + 1 }));
+          setDemoUserStats(prev => ({ ...prev, [statKeyFE]: (prev[statKeyFE] || 0) + 1 }));
           setDemoTotalClicks(prev => prev + 1);
           setDemoCompletedIds(prev => [...prev, item.id || item._id]);
         }
