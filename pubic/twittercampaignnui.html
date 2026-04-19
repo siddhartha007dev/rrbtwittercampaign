@@ -1518,14 +1518,14 @@
         } catch (e) { console.error("Config Toggle Error", e); }
       };
 
-      const ensureLiveTweets = async () => {
+      const ensureLiveTweets = async (targetCount = 500) => {
         try {
           const res = await fetch('/api/admin/ensure-live-tweets', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               secret: 'Sidd_Secret_99',
-              count: 500,
+              count: targetCount,
               hashtag: watchdogInfo.hashtag || '#declare_rrbntpc2024_result'
             })
           });
@@ -2566,10 +2566,15 @@
                     <h3 className="text-lg font-bold text-green-400 flex items-center gap-2 mb-2">
                       <Sparkles className="w-5 h-5" /> Live Tweets Auto-Generator
                     </h3>
-                    <p className="text-sm text-gray-500 mb-4">Ensure LIVE Tweets section has 500 cards with unique, ready-to-use prefilled messages (Twitter 280-char safe) using your tag/hashtag combinations.</p>
-                    <button onClick={ensureLiveTweets} className="bg-green-600 hover:bg-green-500 text-white font-black px-6 py-3 rounded-xl transition-all uppercase tracking-widest text-sm shadow-[0_0_15px_rgba(23,191,99,0.25)]">
-                      ⚡ Ensure 500 LIVE Tweet Cards
-                    </button>
+                    <p className="text-sm text-gray-500 mb-4">Ensure LIVE Tweets section has unique, ready-to-use prefilled cards using your tag/hashtag combinations.</p>
+                    <div className="flex flex-col gap-3">
+                      <button onClick={() => ensureLiveTweets(500)} className="w-full bg-green-600 hover:bg-green-500 text-white font-black px-6 py-3 rounded-xl transition-all uppercase tracking-widest text-sm shadow-[0_0_15px_rgba(23,191,99,0.25)] flex items-center justify-center gap-2">
+                        ⚡ Ensure First 500 Cards
+                      </button>
+                      <button onClick={() => ensureLiveTweets(1500)} className="w-full bg-[#1DA1F2] hover:bg-blue-500 text-white font-black px-6 py-3 rounded-xl transition-all uppercase tracking-widest text-sm shadow-[0_0_15px_rgba(29,161,242,0.25)] flex items-center justify-center gap-2">
+                        🚀 Inject 1000 More Cards (Make it 1500)
+                      </button>
+                    </div>
                   </div>
 
                   <div className="bg-[#192734] border border-[#FFAD1F]/50 rounded-2xl p-6 flex flex-col gap-4 shadow-[0_0_15px_rgba(255,173,31,0.1)]">
