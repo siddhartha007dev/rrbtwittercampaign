@@ -600,7 +600,7 @@
 
     // ===== HOTSTAR-STYLE LIVE SUPPORT CHAT WIDGET =====
     const LiveChatWidget = ({ globalStats = { tweets: 0, retweets: 0, replies: 0 }, isLiveMode }) => {
-      const [isOpen, setIsOpen] = useState(true);
+      const [isOpen, setIsOpen] = useState(false);
       const [input, setInput] = useState('');
       const [userName, setUserName] = useState('');
       const [tempName, setTempName] = useState('');
@@ -2777,6 +2777,8 @@
                             type="range" min="0" max="60" step="1"
                             value={config.actionTimerSeconds || 0}
                             onChange={(e) => setConfig({...config, actionTimerSeconds: parseInt(e.target.value)})}
+                            onMouseUp={(e) => handleConfigToggleApi({ actionTimerSeconds: parseInt(e.target.value) })}
+                            onTouchEnd={(e) => handleConfigToggleApi({ actionTimerSeconds: parseInt(e.target.value) })}
                             className="flex-1 accent-blue-500"
                           />
                           <span className="text-blue-400 font-mono font-bold w-12 text-center text-lg">{config.actionTimerSeconds || 0}s</span>
