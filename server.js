@@ -1315,9 +1315,9 @@ const ensureLiveTweetCards = async ({ targetCount = 500, hashtag = '#declare_rrb
  let base = "";
  let chunks = 0;
  
- // Ensure base is long enough for at least 3 lines (~220 target chars)
+ // Short and crisp: exactly 2 lines (chunks)
  for (const sent of pool) {
- if ((base.length >= 220 && chunks >= 3) || chunks >= 5) break; 
+ if (chunks >= 2) break; 
  base = normalizeText(base ? `${base} ${sent}` : sent);
  chunks++;
  }
