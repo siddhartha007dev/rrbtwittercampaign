@@ -567,13 +567,39 @@ app.post('/api/action/next-round', async (req, res) => {
             return res.status(400).json({ error: 'Invalid type' });
         }
 
+        // CRITICAL: Content schema stores SINGULAR types (tweet/retweet/quote/reply)
+        // but frontend sends PLURAL (tweets/retweets/quotes/replies). Must convert!
+        const singularTypeMap = { tweets: 'tweet', retweets: 'retweet', quotes: 'quote', replies: 'reply' };
+        const singularType = singularTypeMap[type];
+
         const userProgress = await getOrCreateUserProgress(ip);
         
-        // Find all content IDs for this type
-        const contentItems = await Content.find({ type }, '_id');
+        // Find all content IDs for this type (using SINGULAR type name)
+        const contentItems = await Content.find({ type: singularType }, '_id');
         const contentIds = contentItems.map(c => c._id.toString());
         
-        // Remove these IDs from user's completed IDs natively
+        // Safety: if no content exists for this type, don't do anything
+        if (contentIds.length === 0) {
+            return res.json({ success: false, error: 'No content found for type', userProgress: {
+                completedCardIds: userProgress.completedCardIds,
+                stats: userProgress.stats, totalClicks: userProgress.totalClicks,
+                levels: userProgress.levels, rounds: userProgress.rounds,
+                unlockedBadges: userProgress.unlockedBadges
+            }});
+        }
+
+        // Safety: check that ALL content IDs are actually in completedCardIds before advancing
+        const allCompleted = contentIds.every(cid => userProgress.completedCardIds.includes(cid));
+        if (!allCompleted) {
+            return res.json({ success: false, error: 'Not all cards completed yet', userProgress: {
+                completedCardIds: userProgress.completedCardIds,
+                stats: userProgress.stats, totalClicks: userProgress.totalClicks,
+                levels: userProgress.levels, rounds: userProgress.rounds,
+                unlockedBadges: userProgress.unlockedBadges
+            }});
+        }
+        
+        // Remove these IDs from user's completed IDs
         userProgress.completedCardIds = userProgress.completedCardIds.filter(id => !contentIds.includes(id));
         
         // Increment round
@@ -1490,6 +1516,30 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, async () => {
     console.log(`🚀 Server running on port ${PORT}`);
     console.log(`📡 MongoDB: ${MONGODB_URI.replace(/\/\/([^:]+):([^@]+)@/, '//***:***@')}`);
+
+    // One-time fix: reset corrupted rounds data caused by plural/singular type bug
+    try {
+        const UserProgress = mongoose.model('UserProgress');
+        const corrupted = await UserProgress.find({
+            $or: [
+                { 'rounds.tweets': { $gt: 50 } },
+                { 'rounds.retweets': { $gt: 50 } },
+                { 'rounds.quotes': { $gt: 50 } },
+                { 'rounds.replies': { $gt: 50 } }
+            ]
+        });
+        if (corrupted.length > 0) {
+            console.log(`🔧 Fixing ${corrupted.length} users with corrupted rounds data...`);
+            for (const u of corrupted) {
+                if (u.rounds.tweets > 50) u.rounds.tweets = 1;
+                if (u.rounds.retweets > 50) u.rounds.retweets = 1;
+                if (u.rounds.quotes > 50) u.rounds.quotes = 1;
+                if (u.rounds.replies > 50) u.rounds.replies = 1;
+                await u.save();
+            }
+            console.log('✅ Corrupted rounds data fixed.');
+        }
+    } catch (e) { console.error('Rounds migration error:', e); }
 
     // Auto-generate live tweet cards ONLY when explicitly enabled.
     // This prevents demo-ish content from leaking into LIVE unexpectedly.
