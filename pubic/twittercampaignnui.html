@@ -2318,14 +2318,43 @@
 
             <CandyCrushMap currentCards={currentCards} activeTab={activeTab} userTier={userTier} />
 
-            <div className="flex justify-between items-end mb-6 border-b border-gray-800 pb-2">
-              <h2 className="text-2xl font-black text-white flex items-center gap-2">
-                Level <span className="text-[#1DA1F2]">{cardPageLevel}</span>
-              </h2>
-              <span className="text-sm text-gray-500 font-bold uppercase tracking-widest">
-                {currentCards.filter(c => c.completed).length} / {currentCards.length} Completed
-              </span>
-            </div>
+            {(() => {
+              const sourceMap = { tweets, retweets, quotes, replies };
+              const allSectionCards = sourceMap[activeTab] || [];
+              const totalInSection = allSectionCards.length;
+              const completedInSection = allSectionCards.filter(c => c.completed).length;
+              const pct = totalInSection > 0 ? Math.round((completedInSection / totalInSection) * 100) : 0;
+              const levelCompleted = currentCards.filter(c => c.completed).length;
+              const levelTotal = currentCards.length;
+              const colorMap = { tweets: '#1DA1F2', retweets: '#17BF63', quotes: '#A855F7', replies: '#F97316' };
+              const accentColor = colorMap[activeTab] || '#1DA1F2';
+              return (
+                <div className="mb-6">
+                  <div className="flex justify-between items-end border-b border-gray-800 pb-2 mb-3">
+                    <h2 className="text-2xl font-black text-white flex items-center gap-2">
+                      Level <span style={{ color: accentColor }}>{cardPageLevel}</span>
+                    </h2>
+                    <span className="text-sm text-gray-500 font-bold uppercase tracking-widest">
+                      {levelCompleted} / {levelTotal} Completed
+                    </span>
+                  </div>
+                  <div className="bg-[#192734] border border-gray-800 rounded-xl p-3 flex items-center gap-4">
+                    <div className="flex-1">
+                      <div className="flex justify-between items-center mb-1.5">
+                        <span className="text-xs font-bold uppercase tracking-widest text-gray-400">{activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} Progress</span>
+                        <span className="text-xs font-black" style={{ color: accentColor }}>{completedInSection} / {totalInSection}</span>
+                      </div>
+                      <div className="w-full bg-gray-800 rounded-full h-2.5 overflow-hidden">
+                        <div className="h-full rounded-full transition-all duration-700 ease-out" style={{ width: `${pct}%`, background: `linear-gradient(90deg, ${accentColor}, ${accentColor}cc)` }} />
+                      </div>
+                    </div>
+                    <div className="text-right min-w-[48px]">
+                      <span className="text-lg font-black" style={{ color: accentColor }}>{pct}%</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {currentCards.map((item, idx) => {
@@ -2414,6 +2443,33 @@
                   </div>
                 );
               })}
+
+              {/* Animated Next Level Banner */}
+              {currentCards.length > 0 && !currentCards.every(c => c.completed) && (() => {
+                const sourceMap = { tweets, retweets, quotes, replies };
+                const allCards = sourceMap[activeTab] || [];
+                const maxLvl = Math.max(1, Math.ceil(allCards.length / CARDS_PER_LEVEL));
+                const remaining = currentCards.filter(c => !c.completed).length;
+                const hasNextLevel = cardPageLevel < maxLvl;
+                if (!hasNextLevel && remaining <= 0) return null;
+                return (
+                  <div className="col-span-full mt-2">
+                    <div className="relative overflow-hidden bg-gradient-to-r from-[#192734] via-[#1a2f40] to-[#192734] border border-dashed border-[#1DA1F2]/30 rounded-2xl p-5 text-center">
+                      <div className="absolute inset-0 opacity-10" style={{ background: 'radial-gradient(circle at 50% 50%, #1DA1F2 0%, transparent 70%)' }} />
+                      <div className="relative z-10 flex flex-col items-center gap-2">
+                        <div className="flex items-center gap-2 animate-bounce">
+                          <span className="text-2xl">🚀</span>
+                          <span className="text-2xl">⬇️</span>
+                        </div>
+                        <p className="text-white font-bold text-sm md:text-base">
+                          Complete <span className="text-[#1DA1F2] font-black">{remaining}</span> remaining {remaining === 1 ? 'card' : 'cards'} to {hasNextLevel ? 'unlock the next level!' : 'finish this section!'}
+                        </p>
+                        <p className="text-gray-500 text-xs">Keep going — your contribution matters! 💪</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {currentCards.length === 0 && effectiveIsLiveMode && isLiveLoading && (
                 <div className="col-span-full py-16 text-center text-gray-400 border border-dashed border-gray-800 rounded-2xl bg-[#192734]/50">
