@@ -1204,9 +1204,10 @@
         const ensureMandatoryHashtag = (text) => {
           const out = normalize(text);
           if (!out) return mandatoryHashtag;
+          if (new RegExp(`^${escapeRegex(mandatoryHashtag)}(?=\\s|$)`, 'i').test(out)) return out;
           const re = new RegExp(`(^|\\s)${escapeRegex(mandatoryHashtag)}(?=\\s|$)`, 'i');
           if (re.test(out)) return out;
-          return normalize(`${out} ${mandatoryHashtag}`);
+          return normalize(`${mandatoryHashtag}${sep}${out}`);
         };
 
         const sentencePool = () => {
@@ -1228,7 +1229,7 @@
           return allPoolSentences.length >= 6 ? allPoolSentences : Array.from(new Set([...allPoolSentences, ...fallbacks]));
         };
 
-        // Priority: (1) mandatory hashtag in tag line (2) full pool sentences in body (3) remaining → static (pinned + shuffled pool) then max 1 dynamic (pinned or shuffled pool).
+        // Priority: (1) mandatory hashtag FIRST in text (Android intent often drops end of long URL/text) (2) body (3) @mentions only — static then max 1 dynamic.
         const buildBodyParts = (maxLen) => {
           const pool = [...sentencePool()].sort(() => 0.5 - Math.random());
           const parts = [];
@@ -1242,30 +1243,26 @@
           return parts;
         };
 
-        const buildTagLine = (maxLen) => {
-          const must = mandatoryHashtag;
-          if (maxLen <= must.length) return must;
+        const buildMentionsLine = (maxLen) => {
+          if (maxLen <= 0) return '';
           const tokens = [];
           const used = new Set();
-          const withMustLen = () => normalize([...tokens, must].join(' ')).length;
-
+          const lineLen = () => normalize(tokens.join(' ')).length;
           const tryAdd = (raw) => {
             const x = normalize(raw);
             if (!x || used.has(x.toLowerCase())) return false;
-            if (x.toLowerCase() === must.toLowerCase()) return false;
+            if (x.toLowerCase() === mandatoryHashtag.toLowerCase()) return false;
             tokens.push(x);
             used.add(x.toLowerCase());
-            if (withMustLen() > maxLen) {
+            if (lineLen() > maxLen) {
               tokens.pop();
               used.delete(x.toLowerCase());
               return false;
             }
             return true;
           };
-
           for (const t of (getTagPools.staticPinned || [])) tryAdd(t);
           for (const t of [...(getTagPools.staticPool || [])].sort(() => 0.5 - Math.random())) tryAdd(t);
-
           let addedDyn = false;
           for (const t of (getTagPools.dynamicPinned || [])) {
             if (tryAdd(t)) { addedDyn = true; break; }
@@ -1275,36 +1272,50 @@
               if (tryAdd(t)) break;
             }
           }
-          return normalize([...tokens, must].join(' '));
+          return normalize(tokens.join(' '));
+        };
+
+        const proseFingerprint = (full) => {
+          const seg = full.split(sep);
+          const prose = seg[1] || '';
+          return normalize(prose.replace(/#[A-Za-z0-9_]+/g, '').trim());
         };
 
         const composeOne = () => {
-          const minTag = mandatoryHashtag;
-          let maxBody = TWITTER_LIMIT - sep.length - minTag.length;
+          const must = mandatoryHashtag;
+          const overhead = must.length + sep.length + sep.length;
+          let maxBody = TWITTER_LIMIT - overhead - 24;
           if (maxBody < 50) maxBody = 50;
           let parts = buildBodyParts(maxBody);
-          if (parts.length === 0) parts = [normalize(sentencePool()[0] || minTag)];
+          if (parts.length === 0) parts = [normalize(sentencePool()[0] || must)];
 
           const shrinkTagsThenBody = (bodyParts) => {
             let bp = [...bodyParts];
             for (let guard = 0; guard < 40 && bp.length; guard++) {
               const bodyStr = normalize(bp.join(' '));
-              let rem = TWITTER_LIMIT - sep.length - bodyStr.length;
-              let tags = buildTagLine(Math.max(minTag.length, rem));
-              let full = `${bodyStr}${sep}${tags}`;
+              const remMen = TWITTER_LIMIT - overhead - bodyStr.length;
+              const mentions = buildMentionsLine(Math.max(0, remMen));
+              const full = mentions
+                ? `${must}${sep}${bodyStr}${sep}${mentions}`
+                : `${must}${sep}${bodyStr}`;
               if (full.length <= TWITTER_LIMIT) return ensureMandatoryHashtag(full);
               bp.pop();
             }
-            let bodyStr = normalize(bp.join(' ')) || normalize(sentencePool()[0] || minTag);
-            let rem = TWITTER_LIMIT - sep.length - bodyStr.length;
-            let tags = buildTagLine(Math.max(minTag.length, rem));
-            let full = `${bodyStr}${sep}${tags}`;
+            let bodyStr = normalize(bp.join(' ')) || normalize(sentencePool()[0] || must);
+            let remMen = TWITTER_LIMIT - overhead - bodyStr.length;
+            let mentions = buildMentionsLine(Math.max(0, remMen));
+            let full = mentions ? `${must}${sep}${bodyStr}${sep}${mentions}` : `${must}${sep}${bodyStr}`;
             for (let s = 0; s < 60 && full.length > TWITTER_LIMIT && bodyStr.length > 24; s++) {
               const cut = bodyStr.lastIndexOf(' ');
               bodyStr = (cut > 20 ? bodyStr.slice(0, cut) : bodyStr.slice(0, Math.max(20, bodyStr.length - 12))).trim();
-              rem = TWITTER_LIMIT - sep.length - bodyStr.length;
-              tags = buildTagLine(Math.max(minTag.length, rem));
-              full = `${bodyStr}${sep}${tags}`;
+              remMen = TWITTER_LIMIT - overhead - bodyStr.length;
+              mentions = buildMentionsLine(Math.max(0, remMen));
+              full = mentions ? `${must}${sep}${bodyStr}${sep}${mentions}` : `${must}${sep}${bodyStr}`;
+            }
+            if (full.length > TWITTER_LIMIT) {
+              remMen = Math.max(0, TWITTER_LIMIT - overhead - bodyStr.length);
+              mentions = buildMentionsLine(remMen);
+              full = mentions ? `${must}${sep}${bodyStr}${sep}${mentions}` : `${must}${sep}${bodyStr}`;
             }
             return ensureMandatoryHashtag(full.length > TWITTER_LIMIT ? full.slice(0, TWITTER_LIMIT) : full);
           };
@@ -1314,7 +1325,7 @@
 
         for (let i = 0; i < 150; i++) {
           const candidate = composeOne();
-          const bodyNoHash = normalize((candidate.split(sep)[0] || '').replace(/#[A-Za-z0-9_]+/g, '').trim());
+          const bodyNoHash = proseFingerprint(candidate);
           if (!usedAutoBodiesRef.current.has(bodyNoHash)) {
             usedAutoMessagesRef.current.add(candidate);
             usedAutoBodiesRef.current.add(bodyNoHash);
@@ -1324,7 +1335,7 @@
 
         const candidate = composeOne();
         usedAutoMessagesRef.current.add(candidate);
-        usedAutoBodiesRef.current.add(normalize((candidate.split(sep)[0] || '').replace(/#[A-Za-z0-9_]+/g, '').trim()));
+        usedAutoBodiesRef.current.add(proseFingerprint(candidate));
         return ensureMandatoryHashtag(candidate);
       };
 
@@ -1928,12 +1939,66 @@
         if (comboTimerRef.current) clearTimeout(comboTimerRef.current);
         comboTimerRef.current = setTimeout(() => setCombo(0), 10000);
 
+        const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
+        const isMobileUa = /Android|iPhone|iPad|iPod/i.test(ua);
+        const openDelayMs = isMobileUa ? 0 : 400;
+
         setTimeout(() => {
           const finalId = item.targetId || extractTweetId(item.postLink) || '1234567890';
           let autoContent = getPreferredContent(item);
           let url = '';
+
+          // X Android app often drops ?text= when (1) URL is too long after encodeURIComponent (Hindi explodes byte length)
+          // or (2) many newlines. Flatten + cap encoded length; use x.com for app deep links.
+          const prepareIntentText = (txt) => {
+            let s = String(txt || '');
+            if (isMobileUa) {
+              s = s.replace(/\n\n+/g, '\n').replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+            }
+            const maxEnc = /Android/i.test(ua) ? 768 : 1900;
+            while (s.length > 24 && encodeURIComponent(s).length > maxEnc) {
+              const sp = s.lastIndexOf(' ');
+              s = sp > 48 ? s.slice(0, sp).trim() : s.slice(0, Math.floor(s.length * 0.88)).trim();
+            }
+            return s;
+          };
+
+          const openIntentUrl = (href, clipboardPlain) => {
+            if (/Android/i.test(ua)) {
+              if (clipboardPlain && navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(clipboardPlain).catch(() => { });
+              }
+              try {
+                const noScheme = href.replace(/^https:\/\//i, '');
+                const intentUri = `intent://${noScheme}#Intent;scheme=https;package=com.twitter.android;S.browser_fallback_url=${encodeURIComponent(href)};end`;
+                const a = document.createElement('a');
+                a.href = intentUri;
+                a.target = '_blank';
+                a.rel = 'noopener noreferrer';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                return;
+              } catch (_) { /* fall through */ }
+              try {
+                const a = document.createElement('a');
+                a.href = href;
+                a.target = '_blank';
+                a.rel = 'noopener noreferrer';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                return;
+              } catch (_) { /* fall through */ }
+            }
+            window.open(href, '_blank', 'noopener,noreferrer');
+          };
+
+          let clipPlain = '';
+
           if (type === 'tweet') {
-            url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(autoContent)}`;
+            clipPlain = prepareIntentText(autoContent);
+            url = `https://x.com/intent/tweet?text=${encodeURIComponent(clipPlain)}`;
           } else if (type === 'retweet') {
             url = `https://twitter.com/intent/retweet?tweet_id=${finalId}`;
           } else if (type === 'quote') {
@@ -1961,15 +2026,20 @@
               }
             }
             const full = comment ? `${comment}${sep}${permalink}` : permalink;
-            url = `https://x.com/intent/tweet?text=${encodeURIComponent(full)}`;
+            clipPlain = prepareIntentText(full);
+            url = `https://x.com/intent/tweet?text=${encodeURIComponent(clipPlain)}`;
           } else if (type === 'reply') {
-            url = `https://twitter.com/intent/tweet?in_reply_to=${finalId}&text=${encodeURIComponent(autoContent)}`;
+            clipPlain = prepareIntentText(autoContent);
+            url = `https://x.com/intent/tweet?in_reply_to=${finalId}&text=${encodeURIComponent(clipPlain)}`;
           }
           if (url) {
-            // Note: with noopener/noreferrer, window.open often returns null even on success — do not alert on !w.
-            window.open(url, '_blank', 'noopener,noreferrer');
+            if (/Android/i.test(ua) && (type === 'tweet' || type === 'quote' || type === 'reply')) {
+              openIntentUrl(url, clipPlain);
+            } else {
+              window.open(url, '_blank', 'noopener,noreferrer');
+            }
           }
-        }, 400);
+        }, openDelayMs);
 
         if (celebrationTimerRef.current) clearTimeout(celebrationTimerRef.current);
         celebrationTimerRef.current = setTimeout(() => {
