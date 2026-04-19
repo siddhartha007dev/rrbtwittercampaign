@@ -1187,6 +1187,14 @@
         setDemoReplies(prev => prev.map(t => ({ ...t, completed: demoCompletedIds.includes(t.id) })));
       }, [demoCompletedIds]);
 
+      // Update Live card lists when completed IDs change (crucial for instant round restarts)
+      useEffect(() => {
+        setLiveTweets(prev => prev.map(t => ({ ...t, completed: liveCompletedIds.includes(t._id || t.id) })));
+        setLiveRetweets(prev => prev.map(t => ({ ...t, completed: liveCompletedIds.includes(t._id || t.id) })));
+        setLiveQuotes(prev => prev.map(t => ({ ...t, completed: liveCompletedIds.includes(t._id || t.id) })));
+        setLiveReplies(prev => prev.map(t => ({ ...t, completed: liveCompletedIds.includes(t._id || t.id) })));
+      }, [liveCompletedIds]);
+
       const [tapCount, setTapCount] = useState(0);
       const [showPasswordGate, setShowPasswordGate] = useState(false);
       const [passwordInput, setPasswordInput] = useState('');
@@ -1774,18 +1782,31 @@
 
       const { currentCards, cardPageLevel } = useMemo(() => {
         let sourceArray = [];
-        let currentLevel = 1;
-        if (activeTab === 'tweets') { sourceArray = tweets; currentLevel = levels.tweets || 1; }
-        if (activeTab === 'retweets') { sourceArray = retweets; currentLevel = levels.retweets || 1; }
-        if (activeTab === 'quotes') { sourceArray = quotes; currentLevel = levels.quotes || 1; }
-        if (activeTab === 'replies') { sourceArray = replies; currentLevel = levels.replies || 1; }
+        if (activeTab === 'tweets') sourceArray = tweets;
+        if (activeTab === 'retweets') sourceArray = retweets;
+        if (activeTab === 'quotes') sourceArray = quotes;
+        if (activeTab === 'replies') sourceArray = replies;
+
+        let overrideLevel = 1;
+        let cCount = 0;
+        for (let i = 0; i < sourceArray.length; i++) {
+            if (sourceArray[i].completed) {
+                cCount++;
+                if (cCount >= CARDS_PER_LEVEL) {
+                    overrideLevel++;
+                    cCount = 0;
+                }
+            } else {
+                break; // Stop at the first uncompleted card to perfectly pinpoint active level!
+            }
+        }
 
         const maxLevel = Math.max(1, Math.ceil((sourceArray.length || 0) / CARDS_PER_LEVEL) || 1);
-        const safeLevel = Math.min(Math.max(1, currentLevel), maxLevel);
+        const safeLevel = Math.min(overrideLevel, maxLevel);
         const startIndex = (safeLevel - 1) * CARDS_PER_LEVEL;
         const endIndex = safeLevel * CARDS_PER_LEVEL;
         return { currentCards: sourceArray.slice(startIndex, endIndex), cardPageLevel: safeLevel };
-      }, [activeTab, tweets, retweets, quotes, replies, levels]);
+      }, [activeTab, tweets, retweets, quotes, replies]);
 
       const getUserTier = (clicks) => {
         const levelCompleteCount = Math.floor(clicks / CARDS_PER_LEVEL);
@@ -1819,15 +1840,6 @@
       const updateActiveLevels = (updater) => {
         effectiveIsLiveMode ? setLiveLevels(updater) : setDemoLevels(updater);
       };
-
-      useEffect(() => {
-        if (currentCards.length > 0 && currentCards.every(card => card.completed)) {
-          const timer = setTimeout(() => {
-            updateActiveLevels(prev => ({ ...prev, [activeTab]: prev[activeTab] + 1 }));
-          }, 1500);
-          return () => clearTimeout(timer);
-        }
-      }, [currentCards, activeTab, effectiveIsLiveMode]);
 
       // Persist level changes to backend (IP-based)
       useEffect(() => {
