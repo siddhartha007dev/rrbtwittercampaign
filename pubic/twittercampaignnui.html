@@ -2049,10 +2049,14 @@
         const markCompleted = (list) => list.map(t => { const tId = t.id || t._id; const iId = item.id || item._id; return (tId && iId && tId === iId) ? { ...t, completed: true } : t; });
 
         if (effectiveIsLiveMode) {
+          // Optimistically mark completed in UI instantly
           if (type === 'tweet') setLiveTweets(markCompleted(liveTweets));
           if (type === 'retweet') setLiveRetweets(markCompleted(liveRetweets));
           if (type === 'quote') setLiveQuotes(markCompleted(liveQuotes));
           if (type === 'reply') setLiveReplies(markCompleted(liveReplies));
+          // Also add to liveCompletedIds so fetchLiveData polls don't revert it
+          const itemId = item.id || item._id;
+          if (itemId) setLiveCompletedIds(prev => prev.includes(String(itemId)) ? prev : [...prev, String(itemId)]);
         } else {
           if (type === 'tweet') setDemoTweets(markCompleted(demoTweets));
           if (type === 'retweet') setDemoRetweets(markCompleted(demoRetweets));
