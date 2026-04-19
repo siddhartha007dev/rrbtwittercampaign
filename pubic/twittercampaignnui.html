@@ -1999,18 +1999,6 @@
         // Detect Telegram in-app browser (it strips ?text= params from URLs)
         const isTelegramWebView = /Telegram/i.test(ua) || /TelegramBot/i.test(ua) || (window.TelegramWebviewProxy !== undefined);
 
-        // For Telegram: route through server-side /go redirect to preserve ?text= params
-        // Telegram strips params when it detects twitter.com/x.com, but /go is OUR domain
-        // so Telegram opens it normally → server does 302 → Twitter gets full URL with text
-        const getFinalUrl = (originalUrl) => {
-          if (isTelegramWebView && originalUrl && (originalUrl.includes('x.com') || originalUrl.includes('twitter.com'))) {
-            return `${window.location.origin}/go?url=${encodeURIComponent(originalUrl)}`;
-          }
-          return originalUrl;
-        };
-
-        const finalUrl = getFinalUrl(url);
-
         // Also copy to clipboard as safety net
         if (clipPlain) {
           if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -2030,8 +2018,23 @@
         }
 
         const executeOpen = () => {
-          if (!finalUrl) return;
-          if (/Android/i.test(ua) && !isTelegramWebView && (type === 'tweet' || type === 'quote' || type === 'reply')) {
+          if (!url) return;
+          if (isTelegramWebView && /Android/i.test(ua)) {
+            // Force escape from Telegram WebView on Android to the default external browser (Chrome)
+            try {
+              const noScheme = url.replace(/^https?:\/\//i, '');
+              const intentUri = `intent://${noScheme}#Intent;scheme=https;end`;
+              const a = document.createElement('a');
+              a.href = intentUri;
+              a.target = '_blank';
+              a.rel = 'noopener noreferrer';
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+            } catch (_) {
+              window.open(url, '_blank', 'noopener,noreferrer');
+            }
+          } else if (/Android/i.test(ua) && (type === 'tweet' || type === 'quote' || type === 'reply')) {
             try {
               let intentUri = '';
               if (url.includes('intent/tweet?text=')) {
@@ -2054,10 +2057,10 @@
               a.click();
               document.body.removeChild(a);
             } catch (_) {
-              window.open(finalUrl, '_blank', 'noopener,noreferrer');
+              window.open(url, '_blank', 'noopener,noreferrer');
             }
           } else {
-            window.open(finalUrl, '_blank', 'noopener,noreferrer');
+            window.open(url, '_blank', 'noopener,noreferrer');
           }
         };
 
@@ -2069,7 +2072,18 @@
 
         if (celebrationTimerRef.current) clearTimeout(celebrationTimerRef.current);
         celebrationTimerRef.current = setTimeout(() => {
-          setCelebration(null);
+          // Pause celebration cleanup if user switched to another app (e.g. mobile Twitter)
+          if (typeof document !== 'undefined' && document.hidden) {
+            const onVisibilityChange = () => {
+              if (!document.hidden) {
+                document.removeEventListener('visibilitychange', onVisibilityChange);
+                setTimeout(() => setCelebration(null), 1500); // Give them 1.5s to see it once they return
+              }
+            };
+            document.addEventListener('visibilitychange', onVisibilityChange);
+          } else {
+            setCelebration(null);
+          }
         }, 2800);
       };
 
