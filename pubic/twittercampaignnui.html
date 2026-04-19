@@ -1160,16 +1160,15 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ type })
               }).then(res => res.json()).then(data => {
-                if (data.success && data.userProgress) {
-                  setLiveCompletedIds(data.userProgress.completedCardIds || []);
-                  setLiveRounds(data.userProgress.rounds || { tweets: 1, retweets: 1, quotes: 1, replies: 1 });
-                  setLiveLevels(data.userProgress.levels || { tweets: 1, retweets: 1, quotes: 1, replies: 1 });
-                  // Add a small delay before unlocking the mutex to prevent race loops
-                  setTimeout(() => { advancingRoundsRef.current[type] = false; }, 2000);
-                } else {
-                  advancingRoundsRef.current[type] = false;
+                if (data.success) {
+                  // Single source of truth: just refresh everything from server
+                  fetchLiveData();
                 }
-              }).catch(() => { advancingRoundsRef.current[type] = false; });
+                // Longer mutex to prevent rapid re-fires
+                setTimeout(() => { advancingRoundsRef.current[type] = false; }, 4000);
+              }).catch(() => { 
+                setTimeout(() => { advancingRoundsRef.current[type] = false; }, 4000);
+              });
             }
           }
         };
@@ -1187,14 +1186,6 @@
         setDemoQuotes(prev => prev.map(t => ({ ...t, completed: demoCompletedIds.includes(t.id) })));
         setDemoReplies(prev => prev.map(t => ({ ...t, completed: demoCompletedIds.includes(t.id) })));
       }, [demoCompletedIds]);
-
-      // Update Live card lists when completed IDs change (crucial for instant round restarts)
-      useEffect(() => {
-        setLiveTweets(prev => prev.map(t => ({ ...t, completed: liveCompletedIds.includes(t._id || t.id) })));
-        setLiveRetweets(prev => prev.map(t => ({ ...t, completed: liveCompletedIds.includes(t._id || t.id) })));
-        setLiveQuotes(prev => prev.map(t => ({ ...t, completed: liveCompletedIds.includes(t._id || t.id) })));
-        setLiveReplies(prev => prev.map(t => ({ ...t, completed: liveCompletedIds.includes(t._id || t.id) })));
-      }, [liveCompletedIds]);
 
       const [tapCount, setTapCount] = useState(0);
       const [showPasswordGate, setShowPasswordGate] = useState(false);
