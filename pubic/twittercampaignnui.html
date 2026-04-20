@@ -1475,10 +1475,10 @@
       const badgeTimerRef = useRef(null);
       const celebrationTimerRef = useRef(null);
 
-      const fetchLiveData = async () => {
-        setIsLiveLoading(true);
+      const fetchLiveData = async (isPoll = false) => {
+        if (!isPoll) setIsLiveLoading(true);
         try {
-          const res = await fetch(`/api/live-data?_t=${Date.now()}`);
+          const res = await fetch(`/api/live-data?_t=${Date.now()}${isPoll ? '&statsOnly=true' : ''}`);
           if (res.ok) {
             const data = await res.json();
             if (data.config) {
@@ -1785,8 +1785,8 @@
 
       // Poll config + stats so Demo/LIVE and admin changes propagate to every device.
       useEffect(() => {
-        fetchLiveData();
-        const interval = setInterval(fetchLiveData, 4000);
+        fetchLiveData(false);
+        const interval = setInterval(() => fetchLiveData(true), 4000);
         return () => clearInterval(interval);
       }, []);
 

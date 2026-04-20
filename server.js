@@ -318,7 +318,7 @@ app.get('/api/live-data', async (req, res) => {
                 lastFetched: watchdog.lastFetched,
                 fetchLog: watchdog.fetchLog
             },
-            content: content,
+            content: req.query.statsOnly === 'true' ? undefined : content,
             userProgress: {
                 completedCardIds: userProgress.completedCardIds,
                 stats: userProgress.stats,
