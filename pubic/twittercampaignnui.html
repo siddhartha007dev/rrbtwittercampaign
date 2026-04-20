@@ -2095,10 +2095,9 @@
         if (effectiveIsLiveMode) {
           // Fire and forget fetch immediately to prevent blocking tab redirection
           fetch('/api/action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: item.id || item._id, type }) })
-            .then(res => res.json())
-            .then(data => { if (data.stats) setLiveStats(data.stats); })
             .catch(e => console.error("DB Update Failed"));
           const statKeyFE = { tweet: 'tweets', retweet: 'retweets', quote: 'quotes', reply: 'replies' }[type] || (type + 's');
+          setLiveStats(prev => ({ ...prev, [statKeyFE]: (prev[statKeyFE] || 0) + 1 }));
           setLiveUserStats(prev => ({ ...prev, [statKeyFE]: (prev[statKeyFE] || 0) + 1 }));
           setLiveTotalClicks(prev => prev + 1);
         } else {
