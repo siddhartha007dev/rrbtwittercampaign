@@ -505,6 +505,27 @@ app.post('/api/register', async (req, res) => {
     }
 });
 
+// ── POST /api/admin/force-live-stats ── Admin: Force OVERRIDE the true global stats
+app.post('/api/admin/force-live-stats', async (req, res) => {
+    try {
+        const { tweets, retweets, quotes, replies } = req.body;
+        const stats = await getOrCreateGlobalStats();
+        
+        if (tweets !== undefined && tweets !== '') stats.tweets = Math.max(0, parseInt(tweets) || 0);
+        if (retweets !== undefined && retweets !== '') stats.retweets = Math.max(0, parseInt(retweets) || 0);
+        if (quotes !== undefined && quotes !== '') stats.quotes = Math.max(0, parseInt(quotes) || 0);
+        if (replies !== undefined && replies !== '') stats.replies = Math.max(0, parseInt(replies) || 0);
+
+        await stats.save();
+        redisDel('live_global_data').catch(() => {}); // Force instant global update
+
+        res.json({ success: true, stats: { tweets: stats.tweets, retweets: stats.retweets, quotes: stats.quotes, replies: stats.replies }});
+    } catch (err) {
+        console.error('POST /api/admin/force-live-stats error:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
 // ── POST /api/register/boost ── Admin: manually add to registration count
 app.post('/api/register/boost', async (req, res) => {
     try {

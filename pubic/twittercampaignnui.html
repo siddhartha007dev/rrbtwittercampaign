@@ -1232,6 +1232,7 @@
         lastFetched: null
       });
       const [demoManualInputs, setDemoManualInputs] = useState({ tweets: '', retweets: '', quotes: '', replies: '' });
+      const [liveManualInputs, setLiveManualInputs] = useState({ tweets: '', retweets: '', quotes: '', replies: '' });
 
       const [customCheck, setCustomCheck] = useState('');
       const [isDeepScan, setIsDeepScan] = useState(false);
@@ -1537,11 +1538,34 @@
             }
 
             if (data.userProgress) {
-              setLiveUserStats(data.userProgress.stats || { tweets: 0, retweets: 0, quotes: 0, replies: 0 });
-              setLiveTotalClicks(data.userProgress.totalClicks || 0);
-              setLiveLevels(data.userProgress.levels || { tweets: 1, retweets: 1, quotes: 1, replies: 1 });
-              setLiveRounds(data.userProgress.rounds || { tweets: 1, retweets: 1, quotes: 1, replies: 1 });
-              setUnlockedBadges(data.userProgress.unlockedBadges || []);
+              if (!isPoll) {
+                // Full fetch (page load) — sync everything from DB (source of truth)
+                setLiveUserStats(data.userProgress.stats || { tweets: 0, retweets: 0, quotes: 0, replies: 0 });
+                setLiveTotalClicks(data.userProgress.totalClicks || 0);
+                setLiveLevels(data.userProgress.levels || { tweets: 1, retweets: 1, quotes: 1, replies: 1 });
+                setLiveRounds(data.userProgress.rounds || { tweets: 1, retweets: 1, quotes: 1, replies: 1 });
+                setUnlockedBadges(data.userProgress.unlockedBadges || []);
+              } else {
+                // Background poll — only take MAX to ensure counts never go backwards
+                // Never overwrite optimistic increments with stale DB values
+                const dbStats = data.userProgress.stats || {};
+                setLiveUserStats(prev => ({
+                  tweets: Math.max(prev.tweets || 0, dbStats.tweets || 0),
+                  retweets: Math.max(prev.retweets || 0, dbStats.retweets || 0),
+                  quotes: Math.max(prev.quotes || 0, dbStats.quotes || 0),
+                  replies: Math.max(prev.replies || 0, dbStats.replies || 0),
+                }));
+                setLiveTotalClicks(prev => Math.max(prev, data.userProgress.totalClicks || 0));
+                // Levels/rounds/badges are safe to sync (they only go up, never reset)
+                setLiveLevels(data.userProgress.levels || { tweets: 1, retweets: 1, quotes: 1, replies: 1 });
+                setLiveRounds(data.userProgress.rounds || { tweets: 1, retweets: 1, quotes: 1, replies: 1 });
+                if (data.userProgress.unlockedBadges?.length > 0) {
+                  setUnlockedBadges(prev => {
+                    const merged = new Set([...prev, ...data.userProgress.unlockedBadges]);
+                    return Array.from(merged);
+                  });
+                }
+              }
             }
             if (data.watchdog) {
               setWatchdogInfo(prev => ({ ...prev, ...data.watchdog }));
@@ -1736,6 +1760,23 @@
             fetchLiveData();
           }
         } catch (e) { console.error("Watchdog Manual Error", e); }
+      };
+
+      const handleLiveManualStats = async () => {
+        try {
+          const res = await fetch('/api/admin/force-live-stats', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(liveManualInputs)
+          });
+          if (res.ok) {
+            alert('✅ LIVE stats forcibly updated in native engine.');
+            setLiveManualInputs({ tweets: '', retweets: '', quotes: '', replies: '' });
+            fetchLiveData();
+          } else {
+            alert('❌ Force Update failed.');
+          }
+        } catch (e) { console.error("Live Manual Update Error", e); }
       };
 
       const handleDemoManualStats = () => {
@@ -2983,15 +3024,15 @@
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-black/30 p-4 rounded-xl border border-gray-800">
                       <div className="bg-black/20 p-3 rounded-lg border border-gray-800">
-                        <h4 className="text-sm font-bold text-blue-300 uppercase tracking-widest mb-2">Manual LIVE Stats Sync</h4>
-                        <p className="text-[11px] text-gray-500 mb-2">Updates LIVE external/watchdog stats.</p>
+                        <h4 className="text-sm font-bold text-red-500 uppercase tracking-widest mb-2">Native LIVE Stats Sync</h4>
+                        <p className="text-[11px] text-gray-500 mb-2">Forces update inside native engine (not Watchdog). Overwrites everything.</p>
                         <div className="flex gap-2 mb-2">
-                          <input placeholder="Tweets" value={watchdogInfo.manualInputs.tweets} onChange={(e) => setWatchdogInfo({ ...watchdogInfo, manualInputs: { ...watchdogInfo.manualInputs, tweets: e.target.value } })} className="w-1/4 bg-black/50 border border-gray-700 rounded-lg px-2 py-2 text-blue-400 text-sm text-center" />
-                          <input placeholder="Retweets" value={watchdogInfo.manualInputs.retweets} onChange={(e) => setWatchdogInfo({ ...watchdogInfo, manualInputs: { ...watchdogInfo.manualInputs, retweets: e.target.value } })} className="w-1/4 bg-black/50 border border-gray-700 rounded-lg px-2 py-2 text-green-400 text-sm text-center" />
-                          <input placeholder="Quotes" value={watchdogInfo.manualInputs.quotes} onChange={(e) => setWatchdogInfo({ ...watchdogInfo, manualInputs: { ...watchdogInfo.manualInputs, quotes: e.target.value } })} className="w-1/4 bg-black/50 border border-gray-700 rounded-lg px-2 py-2 text-purple-400 text-sm text-center" />
-                          <input placeholder="Replies" value={watchdogInfo.manualInputs.replies} onChange={(e) => setWatchdogInfo({ ...watchdogInfo, manualInputs: { ...watchdogInfo.manualInputs, replies: e.target.value } })} className="w-1/4 bg-black/50 border border-gray-700 rounded-lg px-2 py-2 text-orange-400 text-sm text-center" />
+                          <input placeholder="Tweets" value={liveManualInputs.tweets} onChange={(e) => setLiveManualInputs({ ...liveManualInputs, tweets: e.target.value })} className="w-1/4 bg-black/50 border border-gray-700 rounded-lg px-2 py-2 text-blue-400 text-sm text-center" />
+                          <input placeholder="Retweets" value={liveManualInputs.retweets} onChange={(e) => setLiveManualInputs({ ...liveManualInputs, retweets: e.target.value })} className="w-1/4 bg-black/50 border border-gray-700 rounded-lg px-2 py-2 text-green-400 text-sm text-center" />
+                          <input placeholder="Quotes" value={liveManualInputs.quotes} onChange={(e) => setLiveManualInputs({ ...liveManualInputs, quotes: e.target.value })} className="w-1/4 bg-black/50 border border-gray-700 rounded-lg px-2 py-2 text-purple-400 text-sm text-center" />
+                          <input placeholder="Replies" value={liveManualInputs.replies} onChange={(e) => setLiveManualInputs({ ...liveManualInputs, replies: e.target.value })} className="w-1/4 bg-black/50 border border-gray-700 rounded-lg px-2 py-2 text-orange-400 text-sm text-center" />
                         </div>
-                        <button onClick={handleWatchdogManual} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-lg transition-colors text-sm">Force Update LIVE Stats</button>
+                        <button onClick={handleLiveManualStats} className="w-full bg-red-600 hover:bg-red-500 text-white font-bold py-2 rounded-lg transition-colors text-sm">Force Update NATIVE Live Stats</button>
                       </div>
                       <div className="bg-black/20 p-3 rounded-lg border border-gray-800">
                         <h4 className="text-sm font-bold text-[#1DA1F2] uppercase tracking-widest mb-2">Manual DEMO Stats Sync</h4>
