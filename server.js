@@ -225,25 +225,27 @@ const getClientIP = (req) => {
 // Get or create singleton documents
 const getOrCreateConfig = async () => {
     let doc = await Config.findOne();
-    if (!doc) doc = await Config.create({});
+    if (!doc) { try { doc = await Config.create({}); } catch(e) { doc = await Config.findOne(); } }
     return doc;
 };
 
 const getOrCreateGlobalStats = async () => {
     let doc = await GlobalStats.findOne();
-    if (!doc) doc = await GlobalStats.create({});
+    if (!doc) { try { doc = await GlobalStats.create({}); } catch(e) { doc = await GlobalStats.findOne(); } }
     return doc;
 };
 
 const getOrCreateUserProgress = async (ip) => {
-    let doc = await UserProgress.findOne({ ip });
-    if (!doc) doc = await UserProgress.create({ ip });
-    return doc;
+    return await UserProgress.findOneAndUpdate(
+        { ip },
+        {},
+        { new: true, upsert: true, setDefaultsOnInsert: true }
+    );
 };
 
 const getOrCreateWatchdog = async () => {
     let doc = await Watchdog.findOne();
-    if (!doc) doc = await Watchdog.create({});
+    if (!doc) { try { doc = await Watchdog.create({}); } catch(e) { doc = await Watchdog.findOne(); } }
     return doc;
 };
 
