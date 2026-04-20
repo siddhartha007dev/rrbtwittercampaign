@@ -528,56 +528,90 @@ app.delete('/api/content/:id', async (req, res) => {
     }
 });
 
+// ===== IN-MEMORY BULK WRITE BUFFER =====
+const pendingUserUpdates = new Map(); // ip -> { completedIds: Set, stats: {tweets:0...}, clicks: 0, lastActive }
+let pendingGlobalStats = { tweets: 0, retweets: 0, quotes: 0, replies: 0 };
+let isFlushing = false;
+
+setInterval(async () => {
+    if (isFlushing) return;
+    isFlushing = true;
+    try {
+        const bulkOps = [];
+        for (const [ip, data] of pendingUserUpdates.entries()) {
+            const incFields = { totalClicks: data.clicks };
+            if (data.stats.tweets > 0) incFields['stats.tweets'] = data.stats.tweets;
+            if (data.stats.retweets > 0) incFields['stats.retweets'] = data.stats.retweets;
+            if (data.stats.quotes > 0) incFields['stats.quotes'] = data.stats.quotes;
+            if (data.stats.replies > 0) incFields['stats.replies'] = data.stats.replies;
+
+            bulkOps.push({
+                updateOne: {
+                    filter: { ip },
+                    update: { 
+                        $addToSet: { completedCardIds: { $each: Array.from(data.completedIds) } },
+                        $inc: incFields,
+                        $set: { lastActive: data.lastActive }
+                    },
+                    upsert: true
+                }
+            });
+        }
+        pendingUserUpdates.clear();
+
+        if (bulkOps.length > 0) {
+            await UserProgress.bulkWrite(bulkOps, { ordered: false });
+        }
+
+        if (pendingGlobalStats.tweets > 0 || pendingGlobalStats.retweets > 0 || pendingGlobalStats.quotes > 0 || pendingGlobalStats.replies > 0) {
+            const copy = { ...pendingGlobalStats };
+            pendingGlobalStats = { tweets: 0, retweets: 0, quotes: 0, replies: 0 };
+            const gStats = await getOrCreateGlobalStats();
+            gStats.tweets += copy.tweets;
+            gStats.retweets += copy.retweets;
+            gStats.quotes += copy.quotes;
+            gStats.replies += copy.replies;
+            await gStats.save();
+        }
+    } catch (err) {
+        console.error("Bulk Write Error:", err);
+    }
+    isFlushing = false;
+}, 4000); // Flush globally to DB every 4 seconds
+
 // ── POST /api/action ── Record a user action (tweet/retweet/reply completion)
 app.post('/api/action', async (req, res) => {
     try {
         const { id, type } = req.body;
         const ip = getClientIP(req);
-        // Proper plural mapping - 'reply' + 's' = 'replys' (wrong!), must use 'replies'
         const statKeyMap = { tweet: 'tweets', retweet: 'retweets', quote: 'quotes', reply: 'replies' };
         const statKey = statKeyMap[type] || (type + 's');
 
-        // Get user progress
-        const userProgress = await getOrCreateUserProgress(ip);
-
-        // If already completed this card, return current state (no double-counting)
-        if (userProgress.completedCardIds.includes(id)) {
-            const globalStats = await getOrCreateGlobalStats();
-            return res.json({
-                stats: { tweets: globalStats.tweets, retweets: globalStats.retweets, quotes: globalStats.quotes || 0, replies: globalStats.replies },
-                userProgress: {
-                    completedCardIds: userProgress.completedCardIds,
-                    stats: userProgress.stats,
-                    totalClicks: userProgress.totalClicks,
-                    levels: userProgress.levels,
-                    unlockedBadges: userProgress.unlockedBadges
-                }
-            });
+        // Check if fast DB reads show it's already done (anti-spam) without locking
+        const up = await UserProgress.findOne({ ip }, 'completedCardIds').lean();
+        if (up && up.completedCardIds && up.completedCardIds.includes(String(id))) {
+             return res.json({ success: true, cached: true });
         }
 
-        // Update user progress
-        userProgress.completedCardIds.push(id);
-        userProgress.stats[statKey] = (userProgress.stats[statKey] || 0) + 1;
-        userProgress.totalClicks = (userProgress.totalClicks || 0) + 1;
-        userProgress.lastActive = new Date();
-        await userProgress.save();
+        // Initialize local memory track
+        if (!pendingUserUpdates.has(ip)) {
+            pendingUserUpdates.set(ip, { completedIds: new Set(), stats: {tweets:0, retweets:0, quotes:0, replies:0}, clicks: 0, lastActive: new Date() });
+        }
+        const userMem = pendingUserUpdates.get(ip);
+        
+        // Memory anti-spam check
+        if (userMem.completedIds.has(String(id))) {
+             return res.json({ success: true, queued: true });
+        }
 
-        // Update global stats
-        const globalStats = await getOrCreateGlobalStats();
-        globalStats[statKey] = (globalStats[statKey] || 0) + 1;
-        await globalStats.save();
+        // Instantly increment in Node.js Memory RAM
+        userMem.completedIds.add(String(id));
+        userMem.stats[statKey]++;
+        userMem.clicks++;
+        userMem.lastActive = new Date();
+        pendingGlobalStats[statKey]++;
 
-        res.json({
-            stats: { tweets: globalStats.tweets, retweets: globalStats.retweets, quotes: globalStats.quotes || 0, replies: globalStats.replies },
-            userProgress: {
-                completedCardIds: userProgress.completedCardIds,
-                stats: userProgress.stats,
-                totalClicks: userProgress.totalClicks,
-                levels: userProgress.levels,
-                rounds: userProgress.rounds,
-                unlockedBadges: userProgress.unlockedBadges
-            }
-        });
+        return res.json({ success: true, queued: true });
     } catch (err) {
         console.error('POST /api/action error:', err);
         res.status(500).json({ error: 'Server error' });
