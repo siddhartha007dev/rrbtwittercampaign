@@ -249,18 +249,33 @@ const getOrCreateWatchdog = async () => {
 
 // ===== API ROUTES =====
 
+let mCacheLiveData = { data: null, timestamp: 0 };
+let mCacheChatData = { data: null, timestamp: 0 };
+const CACHE_TTL_MS = 2500;
+
 // ── GET /api/live-data ── Main data endpoint (config + stats + content + user progress)
 app.get('/api/live-data', async (req, res) => {
     try {
         const ip = getClientIP(req);
+        const now = Date.now();
 
-        const [config, stats, content, userProgress, watchdog] = await Promise.all([
-            getOrCreateConfig(),
-            getOrCreateGlobalStats(),
-            Content.find().sort({ createdAt: -1 }),
-            getOrCreateUserProgress(ip),
-            getOrCreateWatchdog()
-        ]);
+        let globalData;
+        if (mCacheLiveData.data && (now - mCacheLiveData.timestamp < CACHE_TTL_MS)) {
+            globalData = mCacheLiveData.data;
+        } else {
+            const [config, stats, content, watchdog] = await Promise.all([
+                getOrCreateConfig(),
+                getOrCreateGlobalStats(),
+                Content.find().sort({ createdAt: -1 }),
+                getOrCreateWatchdog()
+            ]);
+            globalData = { config, stats, content, watchdog };
+            mCacheLiveData.data = globalData;
+            mCacheLiveData.timestamp = now;
+        }
+
+        const { config, stats, content, watchdog } = globalData;
+        const userProgress = await getOrCreateUserProgress(ip);
 
         // Watchdog logic: show MAX of engine stats vs external watchdog stats
         let displayStats = { tweets: stats.tweets, retweets: stats.retweets, quotes: stats.quotes || 0, replies: stats.replies };
@@ -400,8 +415,15 @@ app.post('/api/admin/bot-action', async (req, res) => {
 // ── GET /api/chat ── Get live chat messages
 app.get('/api/chat', async (req, res) => {
     try {
+        const now = Date.now();
+        if (mCacheChatData.data && (now - mCacheChatData.timestamp < CACHE_TTL_MS)) {
+            return res.json(mCacheChatData.data);
+        }
         const messages = await Chat.find().sort({ createdAt: -1 }).limit(50);
-        res.json(messages.reverse()); // Send chronologically
+        const chronological = messages.reverse();
+        mCacheChatData.data = chronological;
+        mCacheChatData.timestamp = now;
+        res.json(chronological);
     } catch (err) {
         res.status(500).json({ error: 'Server error' });
     }
