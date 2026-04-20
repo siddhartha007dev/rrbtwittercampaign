@@ -1958,7 +1958,7 @@
           }
 
           return {
-            id: effectiveIsLiveMode ? undefined : `${newItem.type}-bulk-${Date.now()}-${idx}`,
+            id: `${newItem.type}-bulk-${Date.now()}-${idx}`,
             type: newItem.type,
             text: contentText,
             postLink: link,
@@ -1968,15 +1968,19 @@
         });
 
         if (effectiveIsLiveMode) {
-          try {
-            await fetch('/api/content/bulk', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: newArray }) });
-            fetchLiveData();
-          } catch (e) { console.error("DB Error"); }
+          if (newItem.type === 'tweet') setLiveTweets(prev => [...newArray, ...prev]);
+          else if (newItem.type === 'retweet') setLiveRetweets(prev => [...newArray, ...prev]);
+          else if (newItem.type === 'quote') setLiveQuotes(prev => [...newArray, ...prev]);
+          else if (newItem.type === 'reply') setLiveReplies(prev => [...newArray, ...prev]);
+
+          fetch('/api/content/bulk', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: newArray }) })
+            .then(() => fetchLiveData())
+            .catch(e => console.error("DB Error"));
         } else {
-          if (newItem.type === 'tweet') setDemoTweets([...newArray, ...demoTweets]);
-          else if (newItem.type === 'retweet') setDemoRetweets([...newArray, ...demoRetweets]);
-          else if (newItem.type === 'quote') setDemoQuotes([...newArray, ...demoQuotes]);
-          else if (newItem.type === 'reply') setDemoReplies([...newArray, ...demoReplies]);
+          if (newItem.type === 'tweet') setDemoTweets(prev => [...newArray, ...prev]);
+          else if (newItem.type === 'retweet') setDemoRetweets(prev => [...newArray, ...prev]);
+          else if (newItem.type === 'quote') setDemoQuotes(prev => [...newArray, ...prev]);
+          else if (newItem.type === 'reply') setDemoReplies(prev => [...newArray, ...prev]);
         }
 
         setBulkText('');
@@ -1994,7 +1998,7 @@
 
           // 1. Retweet card (no message body)
           allItems.push({
-            id: effectiveIsLiveMode ? undefined : `retweet-combo-${Date.now()}-${idx}`,
+            id: `retweet-combo-${Date.now()}-${idx}`,
             type: 'retweet',
             text: '',
             postLink: cleanLink,
@@ -2004,7 +2008,7 @@
 
           // 2. Quote card (autofill message via combinatorial engine)
           allItems.push({
-            id: effectiveIsLiveMode ? undefined : `quote-combo-${Date.now()}-${idx}`,
+            id: `quote-combo-${Date.now()}-${idx}`,
             type: 'quote',
             text: '',
             postLink: cleanLink,
@@ -2014,7 +2018,7 @@
 
           // 3. Reply card (autofill message via combinatorial engine)
           allItems.push({
-            id: effectiveIsLiveMode ? undefined : `reply-combo-${Date.now()}-${idx}`,
+            id: `reply-combo-${Date.now()}-${idx}`,
             type: 'reply',
             text: '',
             postLink: cleanLink,
@@ -2023,15 +2027,19 @@
           });
         });
 
+        const retweetItems = allItems.filter(i => i.type === 'retweet');
+        const quoteItems = allItems.filter(i => i.type === 'quote');
+        const replyItems = allItems.filter(i => i.type === 'reply');
+
         if (effectiveIsLiveMode) {
-          try {
-            await fetch('/api/content/bulk', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: allItems }) });
-            fetchLiveData();
-          } catch (e) { console.error('Combo DB Error'); }
+          setLiveRetweets(prev => [...retweetItems, ...prev]);
+          setLiveQuotes(prev => [...quoteItems, ...prev]);
+          setLiveReplies(prev => [...replyItems, ...prev]);
+
+          fetch('/api/content/bulk', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: allItems }) })
+            .then(() => fetchLiveData())
+            .catch(e => console.error('Combo DB Error'));
         } else {
-          const retweetItems = allItems.filter(i => i.type === 'retweet');
-          const quoteItems = allItems.filter(i => i.type === 'quote');
-          const replyItems = allItems.filter(i => i.type === 'reply');
           setDemoRetweets(prev => [...retweetItems, ...prev]);
           setDemoQuotes(prev => [...quoteItems, ...prev]);
           setDemoReplies(prev => [...replyItems, ...prev]);
