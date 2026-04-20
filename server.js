@@ -970,6 +970,7 @@ app.post('/api/watchdog/manual', async (req, res) => {
         watchdog.fetchLog = `Manual update by admin at ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`;
 
         await watchdog.save();
+        redisDel('live_global_data').catch(() => {}); // Force all users to see updated stats instantly
 
         // Return merged stats
         const engineStats = await getOrCreateGlobalStats();
