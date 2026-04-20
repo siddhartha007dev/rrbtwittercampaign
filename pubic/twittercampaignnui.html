@@ -1351,10 +1351,10 @@
             }
             return true;
           };
-          for (const t of (getTagPools.staticPinned || [])) tryAdd(t);
+          for (const t of [...(getTagPools.staticPinned || [])].sort(() => 0.5 - Math.random())) tryAdd(t);
           for (const t of [...(getTagPools.staticPool || [])].sort(() => 0.5 - Math.random())) tryAdd(t);
           let addedDyn = false;
-          for (const t of (getTagPools.dynamicPinned || [])) {
+          for (const t of [...(getTagPools.dynamicPinned || [])].sort(() => 0.5 - Math.random())) {
             if (tryAdd(t)) { addedDyn = true; break; }
           }
           if (!addedDyn) {
