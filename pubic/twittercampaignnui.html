@@ -1477,9 +1477,31 @@
       const celebrationTimerRef = useRef(null);
 
       const fetchLiveData = async (isPoll = false) => {
-        if (!isPoll) setIsLiveLoading(true);
+        // ONLY show loading spinner if we have NO content at all in any tab
+        const hasNoContent = liveTweets.length === 0 && liveRetweets.length === 0 && liveQuotes.length === 0 && liveReplies.length === 0;
+        if (!isPoll && hasNoContent) setIsLiveLoading(true);
+
+        // Add a safety timeout to kill the spinner if the network/ISP is blocking Railway
+        const timeoutId = setTimeout(() => {
+          if (!isPoll) setIsLiveLoading(false);
+          // If after 8 seconds we still have no content, generate some local 'Seed' cards
+          // so the user isn't stuck looking at a blank page
+          if (hasNoContent) {
+            console.log("Network timeout: Seeding local cards for safety.");
+            const seedIds = Array.from({length: 12}, (_, i) => `seed-${i}`);
+            const seedApply = (ids) => ids.map(id => ({
+              id, _id: id, text: getOrGenerateContentForId(id), completed: false
+            }));
+            setLiveTweets(seedApply(seedIds));
+            setLiveRetweets(seedApply(seedIds));
+            setLiveQuotes(seedApply(seedIds));
+            setLiveReplies(seedApply(seedIds));
+          }
+        }, 8000);
+
         try {
           const res = await fetch(`/api/live-data?_t=${Date.now()}${isPoll ? '&statsOnly=true' : ''}`);
+          clearTimeout(timeoutId);
           if (res.ok) {
             const data = await res.json();
             if (data.config) {
@@ -1500,8 +1522,18 @@
             }
             // Only update stats from server if it's a full fetch (not statsOnly poll)
             // statsOnly polls are just for config/live switches — stats are optimistic locally
-            if (!isPoll && data.stats) {
-              setLiveStats(data.stats);
+            if (data.stats) {
+              if (!isPoll) {
+                setLiveStats(data.stats);
+              } else {
+                // Background poll — use max() to prevent stats bouncing back due to stale Redis cache
+                setLiveStats(prev => ({
+                  tweets: Math.max(prev.tweets || 0, data.stats.tweets || 0),
+                  retweets: Math.max(prev.retweets || 0, data.stats.retweets || 0),
+                  quotes: Math.max(prev.quotes || 0, data.stats.quotes || 0),
+                  replies: Math.max(prev.replies || 0, data.stats.replies || 0),
+                }));
+              }
             }
             if (data.regCount !== undefined) setRegCount(Number(data.regCount) || 0);
             if (data.hasRegisteredFromIP !== undefined) setHasRegisteredFromIP(!!data.hasRegisteredFromIP);
