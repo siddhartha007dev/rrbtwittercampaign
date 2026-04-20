@@ -1497,7 +1497,9 @@
                 });
               }
             }
-            if (data.stats) {
+            // Only update stats from server if it's a full fetch (not statsOnly poll)
+            // statsOnly polls are just for config/live switches — stats are optimistic locally
+            if (!isPoll && data.stats) {
               setLiveStats(data.stats);
             }
             if (data.regCount !== undefined) setRegCount(Number(data.regCount) || 0);
@@ -1546,20 +1548,31 @@
             }
 
             // Cache last successful LIVE payload for instant refresh hydration
+            // IMPORTANT: Only update 'content' in cache on FULL fetches — statsOnly polls
+            // return content:undefined which must NOT overwrite cached cards!
             try {
-              localStorage.setItem('campaign_liveCache_v1', JSON.stringify({
+              const existingRaw = localStorage.getItem('campaign_liveCache_v1');
+              const existing = existingRaw ? JSON.parse(existingRaw) : {};
+              const cachePayload = {
+                ...existing,
                 at: Date.now(),
-                liveStats: data.stats || null,
-                liveUserStats: data.userProgress?.stats || null,
-                liveTotalClicks: data.userProgress?.totalClicks || 0,
-                liveLevels: data.userProgress?.levels || null,
-                completedCardIds: data.userProgress?.completedCardIds || [],
-                content: data.content || [],
-                config: data.config || null,
-                watchdog: data.watchdog || null,
-                regCount: data.regCount || 0,
-                hasRegisteredFromIP: !!data.hasRegisteredFromIP,
-              }));
+                config: data.config || existing.config || null,
+                watchdog: data.watchdog || existing.watchdog || null,
+                regCount: data.regCount !== undefined ? data.regCount : (existing.regCount || 0),
+                hasRegisteredFromIP: data.hasRegisteredFromIP !== undefined ? !!data.hasRegisteredFromIP : (existing.hasRegisteredFromIP || false),
+              };
+              // Only update heavy fields when we have a full (non-poll) response
+              if (!isPoll) {
+                cachePayload.liveStats = data.stats || null;
+                cachePayload.liveUserStats = data.userProgress?.stats || null;
+                cachePayload.liveTotalClicks = data.userProgress?.totalClicks || 0;
+                cachePayload.liveLevels = data.userProgress?.levels || null;
+                cachePayload.completedCardIds = data.userProgress?.completedCardIds || [];
+                if (data.content && data.content.length > 0) {
+                  cachePayload.content = data.content;
+                }
+              }
+              localStorage.setItem('campaign_liveCache_v1', JSON.stringify(cachePayload));
             } catch (_) { }
           }
         } catch (err) {
