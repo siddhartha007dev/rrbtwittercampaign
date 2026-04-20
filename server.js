@@ -24,6 +24,51 @@ mongoose.connect(MONGODB_URI)
         process.exit(1);
     });
 
+// ===== UPSTASH REDIS CACHE (REST API — no npm package needed) =====
+const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
+const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+const REDIS_TTL_SEC = 3; // Cache TTL in seconds
+
+const redisGet = async (key) => {
+    if (!REDIS_URL || !REDIS_TOKEN) return null;
+    try {
+        const r = await fetch(`${REDIS_URL}/get/${encodeURIComponent(key)}`, {
+            headers: { Authorization: `Bearer ${REDIS_TOKEN}` }
+        });
+        const json = await r.json();
+        if (json.result) return JSON.parse(json.result);
+    } catch (_) {}
+    return null;
+};
+
+const redisSet = async (key, value, ttlSec = REDIS_TTL_SEC) => {
+    if (!REDIS_URL || !REDIS_TOKEN) return;
+    try {
+        await fetch(`${REDIS_URL}/set/${encodeURIComponent(key)}`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${REDIS_TOKEN}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ value: JSON.stringify(value) })
+        });
+        // Set TTL separately
+        await fetch(`${REDIS_URL}/expire/${encodeURIComponent(key)}/${ttlSec}`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${REDIS_TOKEN}` }
+        });
+    } catch (_) {}
+};
+
+const redisDel = async (key) => {
+    if (!REDIS_URL || !REDIS_TOKEN) return;
+    try {
+        await fetch(`${REDIS_URL}/del/${encodeURIComponent(key)}`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${REDIS_TOKEN}` }
+        });
+    } catch (_) {}
+};
+
+console.log(REDIS_URL ? '✅ Upstash Redis Connected' : '⚠️ Redis not configured — using DB directly');
+
 // ===== SCHEMAS & MODELS =====
 
 // Campaign Content (Tweets, Retweets, Replies)
@@ -251,20 +296,15 @@ const getOrCreateWatchdog = async () => {
 
 // ===== API ROUTES =====
 
-let mCacheLiveData = { data: null, timestamp: 0 };
-let mCacheChatData = { data: null, timestamp: 0 };
-const CACHE_TTL_MS = 2500;
-
 // ── GET /api/live-data ── Main data endpoint (config + stats + content + user progress)
 app.get('/api/live-data', async (req, res) => {
     try {
         const ip = getClientIP(req);
-        const now = Date.now();
+        const isStatsOnly = req.query.statsOnly === 'true';
+        const cacheKey = 'live_global_data';
 
-        let globalData;
-        if (mCacheLiveData.data && (now - mCacheLiveData.timestamp < CACHE_TTL_MS)) {
-            globalData = mCacheLiveData.data;
-        } else {
+        let globalData = await redisGet(cacheKey);
+        if (!globalData) {
             const [config, stats, content, watchdog] = await Promise.all([
                 getOrCreateConfig(),
                 getOrCreateGlobalStats(),
@@ -272,8 +312,8 @@ app.get('/api/live-data', async (req, res) => {
                 getOrCreateWatchdog()
             ]);
             globalData = { config, stats, content, watchdog };
-            mCacheLiveData.data = globalData;
-            mCacheLiveData.timestamp = now;
+            // Cache in Redis — fire and forget
+            redisSet(cacheKey, globalData, REDIS_TTL_SEC).catch(() => {});
         }
 
         const { config, stats, content, watchdog } = globalData;
@@ -363,6 +403,7 @@ app.put('/api/config', async (req, res) => {
         if (tagSettings !== undefined) config.tagSettings = tagSettings;
 
         await config.save();
+        redisDel('live_global_data').catch(() => {}); // Invalidate cache so changes propagate immediately
         res.json(config);
     } catch (err) {
         console.error('PUT /api/config error:', err);
@@ -417,14 +458,11 @@ app.post('/api/admin/bot-action', async (req, res) => {
 // ── GET /api/chat ── Get live chat messages
 app.get('/api/chat', async (req, res) => {
     try {
-        const now = Date.now();
-        if (mCacheChatData.data && (now - mCacheChatData.timestamp < CACHE_TTL_MS)) {
-            return res.json(mCacheChatData.data);
-        }
+        const cached = await redisGet('chat_messages');
+        if (cached) return res.json(cached);
         const messages = await Chat.find().sort({ createdAt: -1 }).limit(50);
         const chronological = messages.reverse();
-        mCacheChatData.data = chronological;
-        mCacheChatData.timestamp = now;
+        redisSet('chat_messages', chronological, 4).catch(() => {});
         res.json(chronological);
     } catch (err) {
         res.status(500).json({ error: 'Server error' });
