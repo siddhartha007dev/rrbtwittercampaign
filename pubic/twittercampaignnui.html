@@ -2050,7 +2050,7 @@
         }
       };
 
-      const triggerAction = async (type, item) => {
+      const triggerAction = (type, item) => {
         if (item.completed || cooldown > 0) return;
 
         const arrSnapshot = effectiveIsLiveMode ? liveTweets : demoTweets;
@@ -2079,13 +2079,11 @@
         }
 
         if (effectiveIsLiveMode) {
-          try {
-            const res = await fetch('/api/action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: item.id || item._id, type }) });
-            const data = await res.json();
-            if (data.stats) {
-              setLiveStats(data.stats);
-            }
-          } catch (e) { console.error("DB Update Failed"); }
+          // Fire and forget fetch immediately to prevent blocking tab redirection
+          fetch('/api/action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: item.id || item._id, type }) })
+            .then(res => res.json())
+            .then(data => { if (data.stats) setLiveStats(data.stats); })
+            .catch(e => console.error("DB Update Failed"));
           const statKeyFE = { tweet: 'tweets', retweet: 'retweets', quote: 'quotes', reply: 'replies' }[type] || (type + 's');
           setLiveUserStats(prev => ({ ...prev, [statKeyFE]: (prev[statKeyFE] || 0) + 1 }));
           setLiveTotalClicks(prev => prev + 1);
@@ -2594,7 +2592,7 @@
                       {/* Campaign Photo on every 2nd tweet card (50% sequential distribution) OR Text if not */}
                       {activeTab === 'tweets' && (idx + 1) % 2 === 0 && !isCompleted ? (
                         <div className="mb-4 rounded-xl overflow-hidden border border-[#1DA1F2]/30 shadow-[0_0_15px_rgba(29,161,242,0.15)] group/img flex-1 flex flex-col justify-center bg-[#0d161d] relative">
-                          <img src={CAMPAIGN_IMAGES[Math.floor(idx / 2) % CAMPAIGN_IMAGES.length]} alt="NTPC Result Campaign" className="w-full h-auto max-h-[180px] md:max-h-[220px] object-cover transition-transform duration-500 group-hover/img:scale-105 opacity-80 group-hover/img:opacity-100" loading="lazy" />
+                          <img src={CAMPAIGN_IMAGES[Math.floor(idx / 2) % CAMPAIGN_IMAGES.length]} alt="NTPC Result Campaign" className="w-full h-auto max-h-[180px] md:max-h-[220px] object-cover transition-transform duration-500 group-hover/img:scale-105 opacity-80 group-hover/img:opacity-100" loading="eager" fetchPriority="high" />
                           <div className="absolute top-2 left-2 bg-[#1DA1F2] text-white text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-md shadow-lg flex items-center gap-1 z-10">
                             <span>📸</span> Campaign Photo
                           </div>
