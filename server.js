@@ -10,6 +10,11 @@ require('dotenv').config();
 
 const app = express();
 
+// ===== ANTI-CRASH HANDLERS =====
+// Prevents the Node process from silently exiting on OOM or sync panic, which causes 502s
+process.on('uncaughtException', (err) => { console.error('Uncaught Exception:', err); });
+process.on('unhandledRejection', (reason, promise) => { console.error('Unhandled Rejection at:', promise, 'reason:', reason); });
+
 // ===== MIDDLEWARE =====
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
@@ -33,7 +38,8 @@ const redisGet = async (key) => {
     if (!REDIS_URL || !REDIS_TOKEN) return null;
     try {
         const r = await fetch(`${REDIS_URL}/get/${encodeURIComponent(key)}`, {
-            headers: { Authorization: `Bearer ${REDIS_TOKEN}` }
+            headers: { Authorization: `Bearer ${REDIS_TOKEN}` },
+            signal: AbortSignal.timeout(1500)
         });
         const json = await r.json();
         if (json.result) return JSON.parse(json.result);
@@ -47,12 +53,14 @@ const redisSet = async (key, value, ttlSec = REDIS_TTL_SEC) => {
         await fetch(`${REDIS_URL}/set/${encodeURIComponent(key)}`, {
             method: 'POST',
             headers: { Authorization: `Bearer ${REDIS_TOKEN}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ value: JSON.stringify(value) })
+            body: JSON.stringify({ value: JSON.stringify(value) }),
+            signal: AbortSignal.timeout(1500)
         });
         // Set TTL separately
         await fetch(`${REDIS_URL}/expire/${encodeURIComponent(key)}/${ttlSec}`, {
             method: 'POST',
-            headers: { Authorization: `Bearer ${REDIS_TOKEN}` }
+            headers: { Authorization: `Bearer ${REDIS_TOKEN}` },
+            signal: AbortSignal.timeout(1500)
         });
     } catch (_) {}
 };
@@ -62,7 +70,8 @@ const redisDel = async (key) => {
     try {
         await fetch(`${REDIS_URL}/del/${encodeURIComponent(key)}`, {
             method: 'POST',
-            headers: { Authorization: `Bearer ${REDIS_TOKEN}` }
+            headers: { Authorization: `Bearer ${REDIS_TOKEN}` },
+            signal: AbortSignal.timeout(1500)
         });
     } catch (_) {}
 };
@@ -823,10 +832,26 @@ app.get('/card/:id', async (req, res) => {
     res.send(html);
 });
 
+// LRU Cache to instantly serve posters and prevent Node Event Loop Canvas Blocking 502s
+const canvasCache = new Map();
+setInterval(() => {
+    const now = Date.now();
+    for (const [id, data] of canvasCache.entries()) {
+        if (now - data.time > 1000 * 60 * 15) canvasCache.delete(id); // Clean up after 15 mins
+    }
+}, 1000 * 60 * 5); // Run cleanup every 5 mins
+
 // ── GET /card/:id/render.png ── Dynamic Canvas Image Renderer
 app.get('/card/:id/render.png', async (req, res) => {
     try {
         const id = req.params.id;
+        
+        // Return cached buffer instantly if exists (fixes 502 crash)
+        if (canvasCache.has(id)) {
+            res.setHeader('Content-Type', 'image/png');
+            return res.send(canvasCache.get(id).buffer);
+        }
+
         // Deterministic hash so the same tweet gets the same image consistently
         let hash = 0;
         for (let i = 0; i < id.length; i++) hash = id.charCodeAt(i) + ((hash << 5) - hash);
@@ -926,9 +951,12 @@ app.get('/card/:id/render.png', async (req, res) => {
         ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
         ctx.fillText('Automatic Verified Live Card Engine', width / 2, height - 30);
 
+        // Cache node-canvas output as raw buffer to prevent hanging the event loop thread
+        const buffer = canvas.toBuffer('image/png');
+        canvasCache.set(id, { buffer, time: Date.now() });
+        
         res.setHeader('Content-Type', 'image/png');
-        // Buffer and pipe exactly out
-        canvas.createPNGStream().pipe(res);
+        res.send(buffer);
     } catch (err) {
         console.error("Canvas Render error:", err);
         res.status(500).send("Error rendering image.");
