@@ -1812,22 +1812,26 @@
         return { currentCards: sourceArray.slice(startIndex, endIndex), cardPageLevel: safeLevel };
       }, [activeTab, tweets, retweets, quotes, replies]);
 
-      const getUserTier = (clicks) => {
-        const levelCompleteCount = Math.floor(clicks / CARDS_PER_LEVEL);
+      const getUserTier = (tweetsCount) => {
+        // levelCompleteCount = total complete levels for the tweets section
+        const levelCompleteCount = Math.floor(tweetsCount / CARDS_PER_LEVEL);
+        
+        // Transition happens exactly when crossing 2 levels!
+        const tierIndex = Math.floor(levelCompleteCount / 2);
 
-        if (levelCompleteCount === 0) return {
+        if (tierIndex === 0) return {
           name: 'Bronze', color: 'from-orange-700 to-yellow-900', borderClass: 'border-2 border-orange-600',
           text: 'text-orange-500', shadow: 'shadow-[0_0_20px_rgba(234,88,12,0.4)]', animClass: '', icon: Star
         };
-        if (levelCompleteCount === 1) return {
+        if (tierIndex === 1) return {
           name: 'Silver', color: 'from-gray-300 to-gray-500', borderClass: 'border-2 border-gray-300',
           text: 'text-gray-300', shadow: 'shadow-[0_0_25px_rgba(209,213,219,0.6)]', animClass: '', icon: Award
         };
-        if (levelCompleteCount === 2) return {
+        if (tierIndex === 2) return {
           name: 'Gold', color: 'from-yellow-400 to-yellow-600', borderClass: 'border-2 border-yellow-400',
           text: 'text-yellow-400', shadow: '', animClass: 'anim-tier-gold', icon: Crown
         };
-        if (levelCompleteCount === 3) return {
+        if (tierIndex === 3) return {
           name: 'Platinum', color: 'from-cyan-300 to-blue-500', borderClass: 'border-2 border-cyan-400',
           text: 'text-cyan-300', shadow: '', animClass: 'anim-tier-plat', icon: Gem
         };
@@ -1838,7 +1842,7 @@
         };
       };
 
-      const userTier = getUserTier(totalClicks);
+      const userTier = getUserTier(userStats.tweets || 0);
       const TierIcon = userTier.icon;
 
       const updateActiveLevels = (updater) => {
